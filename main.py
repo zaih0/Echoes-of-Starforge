@@ -1,99 +1,103 @@
 import pygame, sys, random
 from core.settings import *
-from core.helpers import spawn_position_outside_screen, random_point_in_arena, circle_hit
+from core.helpers import *
 from entities.player import Player
 from entities.enemy import Enemy
 from entities.chest import Chest
-from entities.weapon import Weapon, weapon_pool
+from entities.weapon import weapon_pool
 
-def main():
-    pygame.init()
-    screen = pygame.display.set_mode((WIDTH, HEIGHT))
-    pygame.display.set_caption("Echoes of Starforge")
-    clock = pygame.time.Clock()
-    font = pygame.font.Font(None, 24)
+pygame.init()
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+clock = pygame.time.Clock()
 
-    # Player spawns with basic pistol
-    player = Player(WIDTH//2, HEIGHT//2)
-    player.weapon = Weapon("Basic Pistol","ranged",20,5,500,1.2)
+player = Player(WIDTH//2, HEIGHT//2)
+player.weapon = weapon_pool()[0]
 
-    bullets = []
-    melees = []
-    enemies = []
-    chests = []
+bullets, enemies, chests = [], [], []
+enemy_timer = 0
+chest_timer = CHEST_SPAWN_INTERVAL
+paused = False
 
-    enemy_spawn_acc = 0
-    chest_timer = CHEST_SPAWN_INTERVAL
+while True:
+    dt = clock.tick(FPS)/1000
+    pressed_e = False
 
-    running = True
-    while running:
-        dt = clock.tick(FPS)/1000
-        keys = pygame.key.get_pressed()
-        pressed_e = False
-
-        for e in pygame.event.get():
-            if e.type == pygame.QUIT:
-                running = False
-            if e.type == pygame.KEYDOWN and e.key == pygame.K_e:
+    for e in pygame.event.get():
+        if e.type == pygame.QUIT:
+            pygame.quit(); sys.exit()
+        if e.type == pygame.KEYDOWN:
+            if e.key == pygame.K_ESCAPE:
+                pygame.quit(); sys.exit()
+            if e.key == pygame.K_TAB:
+                paused = not paused
+            if e.key == pygame.K_e:
                 pressed_e = True
+            if player.hp <=0:
+                if e.key == pygame.K_r:
+                    # Reforge
+                    player.hp = PLAYER_MAX_HP
+                    player.weapon = weapon_pool()[0]
+                if e.key == pygame.K_a:
+                    # Respawn
+                    player.hp = PLAYER_MAX_HP
+                    player.pos = pygame.Vector2(WIDTH//2, HEIGHT//2)
 
-        # Spawn enemies
-        enemy_spawn_acc += dt * ENEMY_SPAWN_PER_SEC
-        while enemy_spawn_acc >= 1:
-            enemy_spawn_acc -= 1
-            enemies.append(Enemy(spawn_position_outside_screen()))
+    if paused: continue
 
-        # Spawn chests
-        chest_timer -= dt
-        if chest_timer <= 0:
-            chest_timer = CHEST_SPAWN_INTERVAL
-            item = random.choice(weapon_pool)
-            chests.append(Chest(random_point_in_arena(), item))
+    keys = pygame.key.get_pressed()
+    if player.hp>0:
+        player.update(dt, bullets, keys, enemies)
 
-        # Update entities
-        player.update(dt, bullets, melees, keys, pressed_e, chests)
-        for b in bullets: b.update(dt)
-        for m in melees: m.update(dt, enemies)
-        for e in enemies: e.update(dt, player.pos)
-        for c in chests:
-            if c.opened and c.floating_pickup:
-                c.floating_pickup.update(dt)
+    enemy_timer += dt*ENEMY_SPAWN_PER_SEC
+    if enemy_timer>=1:
+        enemy_timer=0
+        enemies.append(Enemy(spawn_position_outside_screen()))
 
-            # pickup check
-            if c.floating_pickup and (player.pos - c.floating_pickup.pos).length() < PICKUP_RANGE and pressed_e:
-                player.weapon = c.floating_pickup.item
-                c.floating_pickup.active = False
+    chest_timer -= dt
+    if chest_timer<=0:
+        chest_timer = CHEST_SPAWN_INTERVAL
+        chests.append(Chest(random_point_in_arena(), random.choice(weapon_pool())))
 
-        # Bullet -> enemy collisions
-        for b in bullets:
-            for e in enemies:
-                if e.alive and circle_hit(b.pos, BULLET_RADIUS, e.pos, ENEMY_RADIUS):
-                    e.take_damage(b.damage)
-                    b.alive = False
+    for b in bullets: b.update(dt)
+    for e in enemies: e.update(dt, player.pos)
 
-        # Clean up dead entities
-        bullets = [b for b in bullets if b.alive]
-        melees = [m for m in melees if m.alive]
-        enemies = [e for e in enemies if e.alive]
-        chests = [c for c in chests if not (c.opened and c.floating_pickup and not c.floating_pickup.active)]
+    for b in bullets:
+        for e in enemies:
+            if circle_hit(b.pos, BULLET_RADIUS, e.pos, ENEMY_RADIUS):
+                e.take_damage(b.damage)
+                b.alive=False
+                break
 
-        # Draw
-        screen.fill(BG)
-        for c in chests: c.draw(screen)
-        for b in bullets: b.draw(screen)
-        for m in melees: m.draw(screen)
-        for e in enemies: e.draw(screen)
-        player.draw(screen)
+    bullets=[b for b in bullets if b.alive]
+    enemies=[e for e in enemies if e.alive]
 
-        # HUD
-        if player.weapon:
-            t = font.render(f"Weapon: {player.weapon.name}", True, (255, 255, 255))
-            screen.blit(t, (10, 10))
+    if player.hp>0:
+        for e in enemies:
+            if (player.pos-e.pos).length() < ENEMY_RADIUS+PLAYER_RADIUS:
+                player.hp -= 15*dt
+                player.hp = max(player.hp,0)
 
-        pygame.display.flip()
+    for c in chests:
+        if pressed_e and not c.opened and (player.pos - c.pos).length() < OPEN_RANGE:
+            c.open()
+        if c.pickup:
+            c.pickup.update(dt)
+            if pressed_e and (player.pos - c.pickup.pos).length() < PICKUP_RANGE:
+                player.weapon = c.item
+                c.pickup.active=False
 
-    pygame.quit()
-    sys.exit()
+    chests=[c for c in chests if not (c.pickup and not c.pickup.active)]
 
-if __name__ == "__main__":
-    main()
+    screen.fill(BG)
+    for c in chests: c.draw(screen)
+    for b in bullets: b.draw(screen)
+    for e in enemies: e.draw(screen)
+    player.draw(screen)
+
+    # Death overlay
+    if player.hp<=0:
+        font = pygame.font.Font(None, 40)
+        text = font.render("You are down! Press R to Reforge or A to Respawn", True, (255,255,255))
+        screen.blit(text, (WIDTH//2 - text.get_width()//2, HEIGHT//2 - 20))
+
+    pygame.display.flip()

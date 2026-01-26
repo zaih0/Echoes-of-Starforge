@@ -1,70 +1,55 @@
 import pygame, math, random
+from core.settings import *
 from entities.bullet import Bullet
 from entities.melee import MeleeAttack
-from core.settings import PLAYER_RADIUS
 
 class Player:
     def __init__(self, x, y):
         self.pos = pygame.Vector2(x, y)
         self.weapon = None
-        self._shoot_cd = 0
-        self._muzzle_flash = 0
-        self.melees = []
+        self.cooldown = 0
+        self.hp = PLAYER_MAX_HP
+        self.muzzle_flash = 0
+        self.melee_attacks = []
 
-    @property
-    def mouse_pos(self):
-        return pygame.Vector2(pygame.mouse.get_pos())
+    def update(self, dt, bullets, keys, enemies):
+        move = pygame.Vector2(keys[pygame.K_d]-keys[pygame.K_a],
+                              keys[pygame.K_s]-keys[pygame.K_w])
+        if move.length_squared():
+            self.pos += move.normalize() * PLAYER_SPEED * dt
 
-    def update(self, dt, bullets, melee_list, keys, pressed_e, chests):
-        # movement
-        vx = vy = 0
-        if keys[pygame.K_w]: vy -=1
-        if keys[pygame.K_s]: vy +=1
-        if keys[pygame.K_a]: vx -=1
-        if keys[pygame.K_d]: vx +=1
-        length = math.hypot(vx, vy)
-        if length > 0: vx, vy = vx/length, vy/length
-        self.pos += pygame.Vector2(vx, vy) * 260 * dt
+        self.cooldown = max(0, self.cooldown - dt)
+        self.muzzle_flash = max(0, self.muzzle_flash - dt)
 
-        # shooting
-        self._shoot_cd = max(0, self._shoot_cd - dt)
-        self._muzzle_flash = max(0, self._muzzle_flash - dt)
-        if pygame.mouse.get_pressed()[0] and self.weapon and self._shoot_cd <= 0 and self.weapon.type=="ranged":
-            self.shoot(bullets)
-            self._shoot_cd = 1/self.weapon.fire_rate
-            self._muzzle_flash = 0.08
+        if self.weapon and self.cooldown <= 0:
+            aim = pygame.Vector2(pygame.mouse.get_pos()) - self.pos
+            if aim.length_squared():
+                if self.weapon.type == "ranged" and pygame.mouse.get_pressed()[0]:
+                    bullets.append(Bullet(self.pos + aim.normalize()*18,
+                                          aim.normalize()*self.weapon.speed,
+                                          self.weapon.damage))
+                    self.cooldown = 1/self.weapon.fire_rate
+                    self.muzzle_flash = 0.08
+                elif self.weapon.type == "melee" and pygame.mouse.get_pressed()[0]:
+                    self.melee_attacks.append(MeleeAttack(self.pos, aim, self.weapon))
+                    self.cooldown = 1/self.weapon.fire_rate
 
-        # melee
-        if pygame.mouse.get_pressed()[0] and self.weapon and self.weapon.type=="melee" and self._shoot_cd <= 0:
-            m = MeleeAttack(self.pos, self.mouse_pos - self.pos, self.weapon)
-            melee_list.append(m)
-            self._shoot_cd = 1/self.weapon.fire_rate
+        for m in self.melee_attacks:
+            m.update(dt, enemies)
+        self.melee_attacks = [m for m in self.melee_attacks if m.alive]
 
-        # open chest
-        if pressed_e:
-            for chest in chests:
-                if not chest.opened and (chest.pos - self.pos).length() < 46:
-                    chest.open()
-                    break
-
-    def shoot(self, bullets):
-        aim = self.mouse_pos - self.pos
-        if aim.length_squared() == 0: return
-        base_angle = math.atan2(aim.y, aim.x)
-        d = pygame.Vector2(math.cos(base_angle), math.sin(base_angle))
-        bullets.append(Bullet(self.pos + d*20, d*self.weapon.speed, self.weapon.lifetime, self.weapon.damage))
-
-    def draw(self, surface):
-        # player body
-        pygame.draw.circle(surface, (220,220,255), (int(self.pos.x), int(self.pos.y)), PLAYER_RADIUS)
-        # aim line
-        mp = pygame.mouse.get_pos()
-        pygame.draw.line(surface, (120,200,255), (int(self.pos.x), int(self.pos.y)), mp,2)
-        # muzzle flash
-        if self._muzzle_flash > 0:
-            aim = self.mouse_pos - self.pos
-            if aim.length_squared()>0:
-                d = aim.normalize()
-                p = self.pos + d*(PLAYER_RADIUS+10)
-                pygame.draw.circle(surface, (255,255,255), (int(p.x), int(p.y)),8,2)
-                pygame.draw.circle(surface, (255,240,180), (int(p.x), int(p.y)),6,1)
+    def draw(self, screen):
+        pygame.draw.circle(screen, (220,220,255), self.pos, PLAYER_RADIUS)
+        if self.muzzle_flash > 0:
+            # muzzle flash with particles
+            pygame.draw.circle(screen, (255,255,200), self.pos, 18, 2)
+            for _ in range(3):
+                offset = pygame.Vector2(random.uniform(-10,10), random.uniform(-10,10))
+                pygame.draw.circle(screen, (255,230,120), self.pos+offset, 4)
+        for m in self.melee_attacks:
+            m.draw(screen)
+        # health bar
+        w = 40
+        pct = max(0, self.hp/PLAYER_MAX_HP)
+        pygame.draw.rect(screen, (60,60,60), (20, HEIGHT-20, w, 6))
+        pygame.draw.rect(screen, (240,80,80), (20, HEIGHT-20, w*pct, 6))

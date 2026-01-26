@@ -1,17 +1,5 @@
-import pygame
-import random
-import math
+import pygame, random, math
 from core.settings import WIDTH, HEIGHT
-
-def clamp(vx, vy):
-    l = math.hypot(vx, vy)
-    return (vx/l, vy/l) if l else (0,0)
-
-def angle_to_unit(angle):
-    return pygame.Vector2(math.cos(angle), math.sin(angle))
-
-def vec_to_angle(v):
-    return math.atan2(v.y, v.x)
 
 def circle_hit(a, ar, b, br):
     return (a - b).length_squared() <= (ar + br) ** 2
@@ -24,4 +12,7 @@ def spawn_position_outside_screen(m=40):
     return pygame.Vector2(WIDTH + m, random.uniform(0, HEIGHT))
 
 def random_point_in_arena(m=60):
-    return pygame.Vector2(random.uniform(m, WIDTH-m), random.uniform(m, HEIGHT-m))
+    return pygame.Vector2(
+        random.uniform(m, WIDTH - m),
+        random.uniform(m, HEIGHT - m)
+    )
