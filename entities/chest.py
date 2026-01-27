@@ -1,23 +1,14 @@
-import pygame, math
-from core.settings import *
-
-class FloatingPickup:
-    def __init__(self, pos, item):
-        self.pos = pygame.Vector2(pos)
-        self.item = item
-        self.time = 0
-        self.active = True
-
-    def update(self, dt):
-        self.time += dt
-
-    def draw(self, screen):
-        if not self.active: return
-        y = int(self.pos.y - 20 + math.sin(self.time*3)*6)
-        pygame.draw.circle(screen, (140,220,255), (int(self.pos.x), y), PICKUP_RADIUS)
-        font = pygame.font.Font(None, 20)
-        text = font.render(self.item.name, True, (255,255,255))
-        screen.blit(text, (self.pos.x - text.get_width()/2, y - 18))
+# entities/chest.py
+import pygame
+import math
+from core.settings import (
+    CHEST_SIZE,
+    CHEST_COLOR,
+    CHEST_OPEN_COLOR,
+    PICKUP_RADIUS,
+    PICKUP_WEAPON_COLOR,
+    PICKUP_CHARM_COLOR
+)
 
 class Chest:
     def __init__(self, pos, item):
@@ -31,8 +22,67 @@ class Chest:
             self.opened = True
             self.pickup = FloatingPickup(self.pos, self.item)
 
-    def draw(self, screen):
-        color = (120,100,70) if self.opened else (190,150,90)
-        pygame.draw.rect(screen, color, (self.pos.x-11, self.pos.y-11, 22, 22))
-        if self.pickup:
-            self.pickup.draw(screen)
+    def draw_at_position(self, screen, screen_pos):
+        """Draw chest at specific screen position"""
+        x, y = screen_pos
+        rect = pygame.Rect(
+            int(x - CHEST_SIZE // 2),
+            int(y - CHEST_SIZE // 2),
+            CHEST_SIZE,
+            CHEST_SIZE
+        )
+
+        color = CHEST_OPEN_COLOR if self.opened else CHEST_COLOR
+        pygame.draw.rect(screen, color, rect, border_radius=4)
+        pygame.draw.rect(screen, (20, 20, 30), rect, 2, border_radius=4)
+
+        if self.pickup and self.pickup.active:
+            self.pickup.draw_at_position(screen, screen_pos)
+
+
+class FloatingPickup:
+    def __init__(self, pos, item):
+        self.base_pos = pygame.Vector2(pos)
+        self.pos = pygame.Vector2(pos)
+        self.item = item
+        self.active = True
+        self.timer = 0
+
+    def update(self, dt):
+        if not self.active:
+            return
+        self.timer += dt
+
+        # Bobbing animation
+        bob = math.sin(self.timer * 3.5) * 6
+        self.pos.y = self.base_pos.y - 24 + bob
+
+    def draw_at_position(self, screen, screen_pos):
+        if not self.active:
+            return
+
+        x, y = screen_pos
+        
+        # Color by item type
+        if getattr(self.item, "type", "") == "charm":
+            color = PICKUP_CHARM_COLOR
+        else:
+            color = PICKUP_WEAPON_COLOR
+
+        # Adjust for bobbing animation
+        draw_y = y - 24 + math.sin(self.timer * 3.5) * 6
+        
+        pygame.draw.circle(
+            screen,
+            color,
+            (int(x), int(draw_y)),
+            PICKUP_RADIUS
+        )
+
+        # Item name
+        font = pygame.font.Font(None, 18)
+        text = font.render(self.item.name, True, (255, 255, 255))
+        screen.blit(
+            text,
+            (x - text.get_width() // 2, draw_y - 20)
+        )

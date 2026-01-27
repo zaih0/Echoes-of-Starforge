@@ -1,42 +1,63 @@
-import pygame, math
-from core.settings import *
+# entities/melee.py
+import pygame
+import math
 
-class MeleeAttack:
-    def __init__(self, player_pos, aim_dir, weapon):
-        self.pos = pygame.Vector2(player_pos)
-        self.angle = math.atan2(aim_dir.y, aim_dir.x)
-        self.weapon = weapon
-        self.duration = 0.18
-        self.age = 0
-        self.arc_radius = MELEE_RADIUS
-        self.arc_angle = MELEE_ARC
-        self.hit_enemies = set()
-        self.alive = True
+class SwordArc:
+    def __init__(self, pos, direction):
+        self.pos = pygame.Vector2(pos)
+        self.dir = direction.normalize() if direction.length_squared() > 0 else pygame.Vector2(1, 0)
+        self.timer = 0.15
+        self.active = True
+        self.damage = 35
+        self.radius = 50
+        self.arc_angle = math.radians(90)  # 90 degree arc
 
-    def update(self, dt, enemies):
-        self.age += dt
-        if self.age >= self.duration:
-            self.alive = False
-            return
-        for e in enemies:
-            if not e.alive or e in self.hit_enemies:
-                continue
-            dir_to_enemy = e.pos - self.pos
-            if dir_to_enemy.length() > self.arc_radius:
-                continue
-            angle_to_enemy = math.atan2(dir_to_enemy.y, dir_to_enemy.x)
-            diff = (angle_to_enemy - self.angle + math.pi) % (2*math.pi) - math.pi
-            if abs(diff) <= self.arc_angle/2:
-                e.take_damage(self.weapon.damage)
-                self.hit_enemies.add(e)
+    def update(self, dt):
+        self.timer -= dt
+        if self.timer <= 0:
+            self.active = False
 
-    def draw(self, screen):
-        alpha = max(0, int(200 * (1 - self.age / self.duration)))
-        surf = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-        start_angle = self.angle - self.arc_angle/2
-        end_angle = self.angle + self.arc_angle/2
-        points = [self.pos]
-        for a in [start_angle, end_angle]:
-            points.append(self.pos + pygame.Vector2(math.cos(a), math.sin(a)) * self.arc_radius)
-        pygame.draw.polygon(surf, (255,180,60,alpha), points)
-        screen.blit(surf, (0,0))
+    def hits(self, enemy):
+        if not enemy.alive:
+            return False
+
+        to_enemy = enemy.pos - self.pos
+        distance = to_enemy.length()
+        
+        if distance > self.radius:
+            return False
+
+        if distance == 0:
+            return True
+
+        # Calculate angle between swing direction and enemy direction
+        angle = math.atan2(self.dir.y, self.dir.x) - math.atan2(to_enemy.y, to_enemy.x)
+        # Normalize angle to [-pi, pi]
+        angle = (angle + math.pi) % (2 * math.pi) - math.pi
+        
+        return abs(angle) < self.arc_angle / 2
+
+    def draw(self, screen, camera_offset=(0, 0)):
+        offset_x, offset_y = camera_offset
+        draw_pos = pygame.Vector2(self.pos.x - offset_x, self.pos.y - offset_y)
+        
+        # Calculate arc angles
+        start_angle = math.atan2(self.dir.y, self.dir.x) - self.arc_angle / 2
+        end_angle = start_angle + self.arc_angle
+        
+        # Draw arc
+        rect = pygame.Rect(
+            draw_pos.x - self.radius,
+            draw_pos.y - self.radius,
+            self.radius * 2,
+            self.radius * 2
+        )
+        
+        # Fade out as timer decreases
+        alpha = int(255 * (self.timer / 0.15))
+        color = (240, 240, 200, alpha)
+        
+        # Create a surface for the arc with transparency
+        arc_surface = pygame.Surface((self.radius * 2, self.radius * 2), pygame.SRCALPHA)
+        pygame.draw.arc(arc_surface, color, arc_surface.get_rect(), start_angle, end_angle, 4)
+        screen.blit(arc_surface, (draw_pos.x - self.radius, draw_pos.y - self.radius))
