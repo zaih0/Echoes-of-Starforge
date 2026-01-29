@@ -1,4 +1,4 @@
-# entities/enemy.py - FIXED
+# entities/enemy.py - COMPLETE UPDATED VERSION
 import pygame
 import random
 import math
@@ -32,7 +32,7 @@ class Enemy:
         
         # Attack cooldown to prevent per-frame damage
         self.attack_cooldown = 0
-        self.attack_interval = 1.0  # Can attack once per second
+        self.attack_interval = 1.0
 
     def take_damage(self, dmg, source_pos=None):
         self.hp -= dmg
@@ -45,10 +45,10 @@ class Enemy:
 
         if self.hp <= 0:
             self.alive = False
-            return True  # Enemy died
-        return False  # Enemy survived
+            return True
+        return False
 
-    def update(self, player, dt, walls):  # FIXED: Changed from (dt, player, room) to (player, dt, walls)
+    def update(self, player, dt, walls):
         if not self.alive:
             return
 
@@ -65,8 +65,8 @@ class Enemy:
             self.pos += self.knockback * dt
             self.knockback *= 0.85
 
-        # Check player's melee attack (if exists) - FIXED: Check player's melee instead of room.melees
-        if hasattr(player, 'melee_attack') and player.melee_attack and player.melee_attack.alive:
+        # Check player's melee attack
+        if hasattr(player, 'melee_attack') and player.melee_attack and player.melee_attack.active:
             melee_distance = (self.pos - player.melee_attack.pos).length()
             if melee_distance < self.radius + player.melee_attack.radius:
                 died = self.take_damage(player.melee_attack.damage, player.melee_attack.pos)
@@ -80,7 +80,7 @@ class Enemy:
             old_pos = self.pos.copy()
             self.pos += movement
 
-            # Check wall collision - FIXED: Use walls parameter instead of room.wall_rects
+            # Check wall collision
             rect = pygame.Rect(
                 self.pos.x - self.radius,
                 self.pos.y - self.radius,
@@ -93,15 +93,15 @@ class Enemy:
                     self.pos = old_pos
                     break
 
-            # Keep enemy in room bounds - FIXED: Use screen bounds instead of room bounds
+            # Keep enemy in room bounds
             screen_width, screen_height = pygame.display.get_surface().get_size()
             self.pos.x = max(self.radius, min(self.pos.x, screen_width - self.radius))
             self.pos.y = max(self.radius, min(self.pos.y, screen_height - self.radius))
 
-        # Damage player on contact - ONLY if attack cooldown is ready
-        if (player.pos - self.pos).length() < self.radius + 14 and self.attack_cooldown <= 0:  # 14 is approximate player radius
+        # Damage player on contact
+        if (player.pos - self.pos).length() < self.radius + 14 and self.attack_cooldown <= 0:
             player.take_damage(self.damage)
-            self.attack_cooldown = self.attack_interval  # Reset cooldown
+            self.attack_cooldown = self.attack_interval
 
     def draw(self, screen, camera):
         if not self.alive:
@@ -111,7 +111,6 @@ class Enemy:
         
         if self.enemy_type == "boss":
             color = (255, 50, 50) if self.hit_timer > 0 else (200, 30, 30)
-            # Draw boss with pulsing effect
             pulse = (pygame.time.get_ticks() % 1000) / 1000
             pulse_size = self.radius + 2 * (0.5 + 0.5 * math.sin(pulse * math.pi * 2))
             pygame.draw.circle(screen, color, (int(screen_pos.x), int(screen_pos.y)), int(pulse_size))
@@ -143,11 +142,9 @@ class XPPickup:
         self.amount = amount
         self.active = True
         self.timer = 0
-        self.collect_timer = 0
-        self.collecting = False
         self.target = None
 
-    def update(self, player, dt):  # FIXED: Changed signature to match call in room.py
+    def update(self, player, dt):
         if not self.active:
             return False
         
@@ -156,25 +153,25 @@ class XPPickup:
         # Bobbing animation
         bob_y = math.sin(self.timer * 3.5) * 3
         
-        # If player is close, start collecting
-        if not self.collecting and (player.pos - self.pos).length() < 50:
-            self.collecting = True
-            self.collect_timer = 0.3
+        # If player is close, start collecting immediately
+        if (player.pos - self.pos).length() < 80:
             self.target = player.pos.copy()
         
-        if self.collecting:
-            self.collect_timer -= dt
-            # Move toward player
-            if self.target:
-                direction = self.target - self.pos
-                if direction.length_squared() > 0:
-                    self.pos += direction.normalize() * 400 * dt
-                
-                # Check if reached player
-                if (player.pos - self.pos).length() < 10:
-                    self.active = False
-                    return True  # XP collected
+        if self.target:
+            # Move toward player with increasing speed
+            direction = self.target - self.pos
+            if direction.length_squared() > 0:
+                distance = direction.length()
+                # Speed increases as it gets closer to player
+                speed = min(800, 200 + (100 - distance) * 10)
+                self.pos += direction.normalize() * speed * dt
+            
+            # Check if reached player
+            if (player.pos - self.pos).length() < 15:
+                self.active = False
+                return True
         
+        # Apply bobbing
         self.pos.y += bob_y * dt
         return False
 
@@ -188,7 +185,7 @@ class XPPickup:
         bob_y = math.sin(self.timer * 3.5) * 5
         draw_y = screen_pos.y + bob_y
         
-        # XP orb - KEEP AS CIRCLE
+        # XP orb
         radius = 8
         pygame.draw.circle(screen, (100, 255, 100), (int(screen_pos.x), int(draw_y)), radius)
         pygame.draw.circle(screen, (150, 255, 150), (int(screen_pos.x), int(draw_y)), radius - 2)
@@ -213,11 +210,9 @@ class ShardPickup:
         self.amount = amount
         self.active = True
         self.timer = 0
-        self.collect_timer = 0
-        self.collecting = False
         self.target = None
 
-    def update(self, player, dt):  # FIXED: Changed signature to match call in room.py
+    def update(self, player, dt):
         if not self.active:
             return False
         
@@ -226,24 +221,22 @@ class ShardPickup:
         # Bobbing animation
         bob_y = math.sin(self.timer * 3.5) * 3
         
-        # If player is close, start collecting
-        if not self.collecting and (player.pos - self.pos).length() < 60:
-            self.collecting = True
-            self.collect_timer = 0.4
+        # If player is close, start collecting immediately
+        if (player.pos - self.pos).length() < 90:
             self.target = player.pos.copy()
         
-        if self.collecting:
-            self.collect_timer -= dt
+        if self.target:
             # Move toward player
-            if self.target:
-                direction = self.target - self.pos
-                if direction.length_squared() > 0:
-                    self.pos += direction.normalize() * 350 * dt
-                
-                # Check if reached player
-                if (player.pos - self.pos).length() < 10:
-                    self.active = False
-                    return True  # Shard collected
+            direction = self.target - self.pos
+            if direction.length_squared() > 0:
+                distance = direction.length()
+                speed = min(700, 150 + (100 - distance) * 8)
+                self.pos += direction.normalize() * speed * dt
+            
+            # Check if reached player
+            if (player.pos - self.pos).length() < 15:
+                self.active = False
+                return True
         
         self.pos.y += bob_y * dt
         return False
@@ -258,13 +251,13 @@ class ShardPickup:
         bob_y = math.sin(self.timer * 3.5) * 5
         draw_y = screen_pos.y + bob_y
         
-        # Shard - KEEP AS DIAMOND (special shard shape)
+        # Shard - diamond shape
         size = 14
         points = [
-            (screen_pos.x, draw_y - size),  # Top
-            (screen_pos.x + size, draw_y),  # Right
-            (screen_pos.x, draw_y + size),  # Bottom
-            (screen_pos.x - size, draw_y)   # Left
+            (screen_pos.x, draw_y - size),
+            (screen_pos.x + size, draw_y),
+            (screen_pos.x, draw_y + size),
+            (screen_pos.x - size, draw_y)
         ]
         
         pygame.draw.polygon(screen, (255, 215, 0), points)

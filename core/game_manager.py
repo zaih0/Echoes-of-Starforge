@@ -1,8 +1,8 @@
-# core/game_manager.py - COMPLETE FIXED VERSION
+# core/game_manager.py - COMPLETE UPDATED VERSION
 import pygame
 import json
 import os
-from core.settings import WIDTH, HEIGHT, FPS, GRID_SIZE  # ADDED GRID_SIZE IMPORT
+from core.settings import WIDTH, HEIGHT, FPS, GRID_SIZE
 from core.menu import MainMenu
 from core.hub import Hub
 from core.dungeon_generator import DungeonGenerator
@@ -41,7 +41,7 @@ class GameManager:
         self.time_elapsed = 0
         self.game_paused = False
         
-        # Font for UI - USE PIXEL FONT
+        # Font for UI
         from core.font_manager import font_manager
         self.font_manager = font_manager
         
@@ -84,8 +84,6 @@ class GameManager:
         self.current_room = self.dungeon.get_start_room()
     
         print(f"Current room: Index={self.current_room.index}, Type={self.current_room.room_type}")
-        print(f"Room position: pixel_x={self.current_room.pixel_x}, pixel_y={self.current_room.pixel_y}")
-        print(f"Room size: width={self.current_room.width}, height={self.current_room.height}")
     
         # Create player with skill bonuses at spawn position
         spawn_pos = self.current_room.get_player_spawn_position()
@@ -108,10 +106,11 @@ class GameManager:
         self.state = "game"
     
         # Debug: Check room contents
-        print(f"Current room enemies: {len(self.current_room.enemies)}")
-        print(f"Current room walls: {len(self.current_room.wall_rects)}")
-        print(f"Current room doors: {len(self.current_room.door_rects)}")
-        print("=" * 50)
+        if self.debug:
+            print(f"Current room enemies: {len(self.current_room.enemies)}")
+            print(f"Current room walls: {len(self.current_room.wall_rects)}")
+            print(f"Current room doors: {len(self.current_room.door_rects)}")
+            print("=" * 50)
     
     def continue_game(self):
         """Continue from save"""
@@ -156,7 +155,6 @@ class GameManager:
                     elif self.state == "dead":
                         # From death screen, go to main menu
                         self.state = "menu"
-                    # Note: No ESC handling in "menu" state - menu handles its own ESC
                 
                 # Add M key to go to main menu from pause screen
                 if event.key == pygame.K_m and self.state == "game" and self.game_paused:
@@ -304,24 +302,25 @@ class GameManager:
         new_grid_x = self.current_room.grid_x + direction[1]
         new_grid_y = self.current_room.grid_y + direction[0]
         
-        print(f"Attempting to move from room {self.current_room.index} at ({self.current_room.grid_x},{self.current_room.grid_y})")
-        print(f"Direction: {direction}")
-        print(f"New grid position: ({new_grid_x},{new_grid_y})")
+        # Debug output only when debug mode is on
+        if self.debug:
+            print(f"Attempting to move from room {self.current_room.index} at ({self.current_room.grid_x},{self.current_room.grid_y})")
+            print(f"Direction: {direction}")
+            print(f"New grid position: ({new_grid_x},{new_grid_y})")
         
         # Check if new position is within grid bounds
         if new_grid_x < 0 or new_grid_x >= GRID_SIZE or new_grid_y < 0 or new_grid_y >= GRID_SIZE:
-            print(f"Cannot move: Position ({new_grid_x}, {new_grid_y}) is out of bounds")
-            # Reset player position to center to prevent getting stuck at door
-            self.player.pos = pygame.Vector2(WIDTH // 2, HEIGHT // 2)
-            return
+            if self.debug:
+                print(f"Cannot move: Position ({new_grid_x}, {new_grid_y}) is out of bounds")
+            return  # Don't move, don't reset player position
         
         # Get the adjacent room
         adjacent_room = self.dungeon.get_room_at(new_grid_x, new_grid_y)
         
         if adjacent_room:
-            print(f"Moving to room {adjacent_room.index} at ({adjacent_room.grid_x},{adjacent_room.grid_y})")
-            print(f"Room type: {adjacent_room.room_type}")
-            print(f"Room connections: {adjacent_room.connections}")
+            if self.debug:
+                print(f"Moving to room {adjacent_room.index} at ({adjacent_room.grid_x},{adjacent_room.grid_y})")
+                print(f"Room type: {adjacent_room.room_type}")
             
             # Update current room
             self.current_room = adjacent_room
@@ -336,11 +335,12 @@ class GameManager:
             # Mark room as visited
             self.current_room.visited = True
             
-            print(f"Player positioned at: {self.player.pos}")
+            if self.debug:
+                print(f"Player positioned at: {self.player.pos}")
         else:
-            print(f"No room at grid position ({new_grid_x}, {new_grid_y})")
-            # Reset player position to center
-            self.player.pos = pygame.Vector2(WIDTH // 2, HEIGHT // 2)
+            if self.debug:
+                print(f"No room at grid position ({new_grid_x}, {new_grid_y})")
+            # Don't move or reset position
     
     def _position_player_at_door(self, from_direction):
         """Position player near the door they entered from"""
@@ -352,7 +352,7 @@ class GameManager:
         
         if door_rect:
             # Position player just inside the door, facing into the room
-            offset = 30 + PLAYER_RADIUS  # Small offset from door
+            offset = 30 + PLAYER_RADIUS
             
             if from_direction == (-1, 0):  # Came from top (entering bottom of room)
                 self.player.pos = pygame.Vector2(
@@ -374,10 +374,12 @@ class GameManager:
                     door_rect.left - offset,
                     door_rect.centery
                 )
-            print(f"Positioned player at door: {from_direction} -> {self.player.pos}")
+            if self.debug:
+                print(f"Positioned player at door: {from_direction} -> {self.player.pos}")
         else:
             # Fallback to center if no door found
-            print(f"WARNING: No door found for direction {from_direction}, positioning at center")
+            if self.debug:
+                print(f"WARNING: No door found for direction {from_direction}, positioning at center")
             self.player.pos = pygame.Vector2(WIDTH // 2, HEIGHT // 2)
     
     def _apply_item_to_player(self, item):
@@ -475,7 +477,7 @@ class GameManager:
             self.player.draw(self.screen, self.camera)
     
     def _draw_game_ui(self):
-        """Draw clean game UI elements"""
+        """Draw clean game UI elements - REMOVED BOTTOM TEXT"""
         # Top-left: Health bar
         self._draw_health_bar()
         
@@ -490,18 +492,7 @@ class GameManager:
         if self.current_room:
             self._draw_room_info()
         
-        # REMOVED: Controls hint at bottom (now in start room tutorial only)
-        # Only show controls hint if NOT in start room
-        if self.current_room and self.current_room.room_type != "start":
-            controls = "WASD: Move | Mouse: Aim/Shoot | E: Open Chests | ESC: Pause | H: Hub | F3: Debug"
-            controls_text = self.font_manager.render(controls, "normal", (180, 180, 180))
-            self.screen.blit(controls_text, (WIDTH//2 - controls_text.get_width()//2, HEIGHT - 40))
-        
-        # Door navigation hint (only if not in start room)
-        if (self.current_room and self.current_room.room_type != "start" and 
-            self.current_room.cleared and len(self.current_room.door_rects) > 0):
-            nav_text = self.font_manager.render("Walk through open doors to explore", "normal", (200, 200, 100))
-            self.screen.blit(nav_text, (WIDTH//2 - nav_text.get_width()//2, HEIGHT - 80))
+        # REMOVED: All bottom text - tutorial is only in start room
     
     def _draw_health_bar(self):
         """Draw health bar in top-left corner"""
@@ -532,7 +523,7 @@ class GameManager:
         
         pygame.draw.rect(self.screen, color, (bar_x + 2, bar_y + 2, fill_width - 4, bar_height - 4), border_radius=3)
         
-        # Health text - USING PIXEL FONT - CHANGED TO "small"
+        # Health text
         health_text = f"HEALTH: {int(self.player.hp)}/{int(self.player.max_hp)}"
         text_surface = self.font_manager.render(health_text, "small", (255, 255, 255))
         text_x = bar_x + (bar_width - text_surface.get_width()) // 2
@@ -593,7 +584,7 @@ class GameManager:
         self.screen.blit(charms_title, (panel_x + 20, charms_y))
         
         if self.player and self.player.charms:
-            for i, charm in enumerate(self.player.charms[:5]):  # Show up to 5 charms
+            for i, charm in enumerate(self.player.charms[:5]):
                 charm_y = charms_y + 30 + (i * 25)
                 charm_text = self.font_manager.render(f"• {charm.name}: {charm.description}", "small", (220, 200, 255))
                 self.screen.blit(charm_text, (panel_x + 40, charm_y))

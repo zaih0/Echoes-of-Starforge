@@ -1,4 +1,4 @@
-# core/room.py - COMPLETE FIXED VERSION
+# core/room.py - COMPLETE UPDATED VERSION
 import pygame
 import random
 import math
@@ -14,12 +14,12 @@ class Room:
         self.grid_x = grid_x
         self.grid_y = grid_y
         self.room_type = room_type
-        self.connections = []  # List of (dx, dy) directions where there are doors
+        self.connections = []
         
-        # Each room takes full screen, centered at (0, 0) for single-screen gameplay
+        # Each room takes full screen
         self.width = WIDTH
         self.height = HEIGHT
-        self.pixel_x = 0  # Always at (0, 0) - single screen at a time
+        self.pixel_x = 0
         self.pixel_y = 0
         
         self.enemies = []
@@ -31,8 +31,8 @@ class Room:
         self.has_boss = False
         
         self.wall_rects = []
-        self.door_rects = {}  # direction -> rect
-        self.door_open = {}   # direction -> bool
+        self.door_rects = {}
+        self.door_open = {}
         
         self.visited = False
         
@@ -40,7 +40,7 @@ class Room:
             self.cleared = True
             self.visited = True
         
-        # Don't generate contents yet - wait for connections to be set
+        # Don't generate contents yet
         self.generated = False
     
     def generate_contents(self, difficulty=1):
@@ -55,16 +55,11 @@ class Room:
         # Create walls with door openings
         border = TILE_SIZE // 2
         
-        # DEBUG: Print connections to see what doors should exist
-        print(f"Room {self.index} connections: {self.connections}")
-        
         # Top wall (with possible door)
         has_top_door = (-1, 0) in self.connections
-        if has_top_door:
-            print(f"Room {self.index} has top door")
         for x in range(0, self.width, TILE_SIZE):
             if has_top_door and abs(x - self.width // 2) < DOOR_WIDTH // 2:
-                continue  # Skip wall where door is
+                continue
             self.wall_rects.append(pygame.Rect(
                 self.pixel_x + x, 
                 self.pixel_y, 
@@ -74,8 +69,6 @@ class Room:
         
         # Bottom wall (with possible door)
         has_bottom_door = (1, 0) in self.connections
-        if has_bottom_door:
-            print(f"Room {self.index} has bottom door")
         for x in range(0, self.width, TILE_SIZE):
             if has_bottom_door and abs(x - self.width // 2) < DOOR_WIDTH // 2:
                 continue
@@ -88,8 +81,6 @@ class Room:
         
         # Left wall (with possible door)
         has_left_door = (0, -1) in self.connections
-        if has_left_door:
-            print(f"Room {self.index} has left door")
         for y in range(0, self.height, TILE_SIZE):
             if has_left_door and abs(y - self.height // 2) < DOOR_WIDTH // 2:
                 continue
@@ -102,8 +93,6 @@ class Room:
         
         # Right wall (with possible door)
         has_right_door = (0, 1) in self.connections
-        if has_right_door:
-            print(f"Room {self.index} has right door")
         for y in range(0, self.height, TILE_SIZE):
             if has_right_door and abs(y - self.height // 2) < DOOR_WIDTH // 2:
                 continue
@@ -114,7 +103,7 @@ class Room:
                 TILE_SIZE
             ))
         
-        # Create door rects - FIXED: Use correct coordinates
+        # Create door rects
         if has_top_door:
             door_rect = pygame.Rect(
                 self.pixel_x + self.width // 2 - DOOR_WIDTH // 2,
@@ -123,9 +112,7 @@ class Room:
                 DOOR_HEIGHT
             )
             self.door_rects[(-1, 0)] = door_rect
-            # Start room doors are open from beginning, others closed until cleared
             self.door_open[(-1, 0)] = (self.room_type == "start") or self.cleared
-            print(f"Created top door at {door_rect}")
         
         if has_bottom_door:
             door_rect = pygame.Rect(
@@ -136,7 +123,6 @@ class Room:
             )
             self.door_rects[(1, 0)] = door_rect
             self.door_open[(1, 0)] = (self.room_type == "start") or self.cleared
-            print(f"Created bottom door at {door_rect}")
         
         if has_left_door:
             door_rect = pygame.Rect(
@@ -147,7 +133,6 @@ class Room:
             )
             self.door_rects[(0, -1)] = door_rect
             self.door_open[(0, -1)] = (self.room_type == "start") or self.cleared
-            print(f"Created left door at {door_rect}")
         
         if has_right_door:
             door_rect = pygame.Rect(
@@ -158,13 +143,10 @@ class Room:
             )
             self.door_rects[(0, 1)] = door_rect
             self.door_open[(0, 1)] = (self.room_type == "start") or self.cleared
-            print(f"Created right door at {door_rect}")
-        
-        print(f"Room {self.index} created {len(self.door_rects)} doors")
         
         # Generate enemies based on room type
         if self.room_type == "enemy" or self.room_type == "normal":
-            num_enemies = random.randint(3, 5) + difficulty  # Scale with difficulty
+            num_enemies = random.randint(3, 5) + difficulty
             for _ in range(num_enemies):
                 pos = self._get_random_position_in_room()
                 enemy = Enemy(pos)
@@ -206,17 +188,14 @@ class Room:
 
     def _get_random_position_in_room(self):
         """Get a random position within the room, avoiding walls and center"""
-        margin = 100  # Keep away from walls
+        margin = 100
         x = random.randint(margin, self.width - margin)
         y = random.randint(margin, self.height - margin)
         
-        # Avoid center area (where player might spawn)
         center_margin = 150
         center_x, center_y = self.width // 2, self.height // 2
         
-        # If position is too close to center, adjust it
         if abs(x - center_x) < center_margin and abs(y - center_y) < center_margin:
-            # Move to one of the quadrants
             if x < center_x:
                 x = random.randint(margin, center_x - center_margin)
             else:
@@ -233,7 +212,7 @@ class Room:
         """Update room state"""
         results = []
         
-        # Update enemies - FIXED: Call with correct parameters (player, dt, walls)
+        # Update enemies
         for enemy in self.enemies[:]:
             enemy.update(player, dt, self.wall_rects)
             
@@ -252,14 +231,14 @@ class Room:
                 self.enemies.remove(enemy)
                 results.append(("xp", enemy.xp_drop))
         
-        # Update XP pickups - FIXED: Call with correct parameters (player, dt)
+        # Update XP pickups
         for xp_pickup in self.xp_pickups[:]:
             collected = xp_pickup.update(player, dt)
             if collected:
                 results.append(("xp", xp_pickup.amount))
                 self.xp_pickups.remove(xp_pickup)
         
-        # Update shard pickups - FIXED: Call with correct parameters (player, dt)
+        # Update shard pickups
         for shard_pickup in self.shard_pickups[:]:
             collected = shard_pickup.update(player, dt)
             if collected:
@@ -276,7 +255,6 @@ class Room:
             # Open all doors
             for direction in self.door_rects.keys():
                 self.door_open[direction] = True
-            print(f"Room {self.index} cleared! Doors opened.")
         
         # Check if player is exiting through a door
         if self.cleared and player:
@@ -291,17 +269,17 @@ class Room:
                     if player_rect.colliderect(door_rect):
                         results.append(("exit", direction))
         
-        # Update melee attacks
+        # Update melee attacks - FIXED: Changed from .alive to .active
         for melee in self.melees[:]:
             melee.update(dt)
-            if not melee.alive:
+            if not melee.active:  # CHANGED THIS LINE
                 self.melees.remove(melee)
         
         return results
 
     def draw(self, screen, camera):
         """Draw the room with camera offset"""
-        # Draw floor (entire screen since room is at (0, 0))
+        # Draw floor
         floor_rect = pygame.Rect(0, 0, self.width, self.height)
         pygame.draw.rect(screen, FLOOR_COLOR, floor_rect)
         
@@ -316,11 +294,6 @@ class Room:
             pygame.draw.rect(screen, WALL_COLOR, wall_rect)
         
         # Draw doors
-        if len(self.door_rects) == 0:
-            print(f"WARNING: Room {self.index} has 0 doors!")
-        else:
-            print(f"Room {self.index} drawing {len(self.door_rects)} doors")
-            
         for direction, door_rect in self.door_rects.items():
             is_open = self.door_open.get(direction, False)
             is_boss_door = self.has_boss

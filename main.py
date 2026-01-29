@@ -1,4 +1,4 @@
-# main.py - FULLY UPDATED VERSION
+# main.py - COMPLETE UPDATED VERSION
 import pygame
 import sys
 from core.settings import WIDTH, HEIGHT, FPS
@@ -8,9 +8,9 @@ def main():
     # Initialize PyGame FIRST
     pygame.init()
     
-    # Initialize font manager AFTER pygame.init() but BEFORE creating GameManager
+    # Initialize font manager AFTER pygame.init()
     from core.font_manager import font_manager
-    font_manager.initialize()  # This is the key line!
+    font_manager.initialize()
     
     # Get monitor dimensions for fullscreen
     info = pygame.display.Info()
