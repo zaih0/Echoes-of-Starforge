@@ -1,8 +1,8 @@
-# settings.py
+# core/settings.py
 # Base screen dimensions
 WIDTH = 1920
 HEIGHT = 1080
-FPS = 120
+FPS = 60
 BG = (12, 12, 18)
 
 # Player
@@ -58,6 +58,10 @@ FLOOR_COLOR = (25, 25, 35)
 WALL_COLOR = (45, 45, 65)
 DOOR_COLOR = (160, 160, 220)
 DOOR_OPEN_COLOR = (100, 200, 100)
+BOSS_DOOR_COLOR = (220, 60, 60)
+DOOR_WIDTH = 120
+DOOR_HEIGHT = 40
+DOOR_MARGIN = 20
 
 # Dungeon Generation
 MIN_ROOMS = 6
@@ -69,3 +73,10 @@ ROOM_MARGIN = 100
 XP_PER_LEVEL = 100
 XP_MULTIPLIER = 1.5
 MAX_LEVEL = 20
+
+# Font Settings
+FONT_SMALL = 16
+FONT_NORMAL = 24
+FONT_MEDIUM = 32
+FONT_LARGE = 48
+FONT_TITLE = 64

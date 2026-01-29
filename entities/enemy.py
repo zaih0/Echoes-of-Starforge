@@ -1,4 +1,4 @@
-# entities/enemy.py
+# entities/enemy.py - FIXED
 import pygame
 import random
 import math
@@ -29,6 +29,10 @@ class Enemy:
         self.alive = True
         self.hit_timer = 0
         self.knockback = pygame.Vector2(0, 0)
+        
+        # Attack cooldown to prevent per-frame damage
+        self.attack_cooldown = 0
+        self.attack_interval = 1.0  # Can attack once per second
 
     def take_damage(self, dmg, source_pos=None):
         self.hp -= dmg
@@ -44,9 +48,13 @@ class Enemy:
             return True  # Enemy died
         return False  # Enemy survived
 
-    def update(self, dt, player, room):
+    def update(self, player, dt, walls):  # FIXED: Changed from (dt, player, room) to (player, dt, walls)
         if not self.alive:
             return
+
+        # Update attack cooldown
+        if self.attack_cooldown > 0:
+            self.attack_cooldown -= dt
 
         # Hit flash timer
         if self.hit_timer > 0:
@@ -57,13 +65,13 @@ class Enemy:
             self.pos += self.knockback * dt
             self.knockback *= 0.85
 
-        # Check melee attacks
-        for melee in room.melees:
-            if melee.hits(self):
-                if melee.damage > 0:
-                    died = self.take_damage(melee.damage, melee.pos)
-                    if died:
-                        return
+        # Check player's melee attack (if exists) - FIXED: Check player's melee instead of room.melees
+        if hasattr(player, 'melee_attack') and player.melee_attack and player.melee_attack.alive:
+            melee_distance = (self.pos - player.melee_attack.pos).length()
+            if melee_distance < self.radius + player.melee_attack.radius:
+                died = self.take_damage(player.melee_attack.damage, player.melee_attack.pos)
+                if died:
+                    return
 
         # Chase player
         direction = player.pos - self.pos
@@ -72,7 +80,7 @@ class Enemy:
             old_pos = self.pos.copy()
             self.pos += movement
 
-            # Check wall collision
+            # Check wall collision - FIXED: Use walls parameter instead of room.wall_rects
             rect = pygame.Rect(
                 self.pos.x - self.radius,
                 self.pos.y - self.radius,
@@ -80,24 +88,26 @@ class Enemy:
                 self.radius * 2
             )
 
-            for wall in room.wall_rects:
+            for wall in walls:
                 if rect.colliderect(wall):
                     self.pos = old_pos
                     break
 
-            # Keep enemy in room bounds
-            self.pos.x = max(room.pixel_x + self.radius, min(self.pos.x, room.pixel_x + room.width - self.radius))
-            self.pos.y = max(room.pixel_y + self.radius, min(self.pos.y, room.pixel_y + room.height - self.radius))
+            # Keep enemy in room bounds - FIXED: Use screen bounds instead of room bounds
+            screen_width, screen_height = pygame.display.get_surface().get_size()
+            self.pos.x = max(self.radius, min(self.pos.x, screen_width - self.radius))
+            self.pos.y = max(self.radius, min(self.pos.y, screen_height - self.radius))
 
-        # Damage player on contact
-        if (player.pos - self.pos).length() < self.radius + 14:  # 14 is approximate player radius
+        # Damage player on contact - ONLY if attack cooldown is ready
+        if (player.pos - self.pos).length() < self.radius + 14 and self.attack_cooldown <= 0:  # 14 is approximate player radius
             player.take_damage(self.damage)
+            self.attack_cooldown = self.attack_interval  # Reset cooldown
 
     def draw(self, screen, camera):
         if not self.alive:
             return
 
-        screen_pos = camera.apply(self)
+        screen_pos = camera.apply_pos(self.pos)
         
         if self.enemy_type == "boss":
             color = (255, 50, 50) if self.hit_timer > 0 else (200, 30, 30)
@@ -137,7 +147,7 @@ class XPPickup:
         self.collecting = False
         self.target = None
 
-    def update(self, dt, player):
+    def update(self, player, dt):  # FIXED: Changed signature to match call in room.py
         if not self.active:
             return False
         
@@ -174,14 +184,27 @@ class XPPickup:
         
         screen_pos = camera.apply_pos(self.pos)
         
-        # XP orb
-        pygame.draw.circle(screen, (100, 255, 100), (int(screen_pos.x), int(screen_pos.y)), 8)
-        pygame.draw.circle(screen, (150, 255, 150), (int(screen_pos.x), int(screen_pos.y)), 6)
+        # Add bobbing to the position
+        bob_y = math.sin(self.timer * 3.5) * 5
+        draw_y = screen_pos.y + bob_y
+        
+        # XP orb - KEEP AS CIRCLE
+        radius = 8
+        pygame.draw.circle(screen, (100, 255, 100), (int(screen_pos.x), int(draw_y)), radius)
+        pygame.draw.circle(screen, (150, 255, 150), (int(screen_pos.x), int(draw_y)), radius - 2)
+        
+        # Add a pulsing glow effect
+        pulse = math.sin(self.timer * 5) * 2 + 2
+        glow_surface = pygame.Surface((radius * 4, radius * 4), pygame.SRCALPHA)
+        pygame.draw.circle(glow_surface, (100, 255, 100, 80), 
+                          (radius * 2, radius * 2), 
+                          int(radius + pulse))
+        screen.blit(glow_surface, (screen_pos.x - radius * 2, draw_y - radius * 2))
         
         # XP amount text
         font = pygame.font.Font(None, 20)
         text = font.render(str(self.amount), True, (255, 255, 255))
-        screen.blit(text, (screen_pos.x - text.get_width()//2, screen_pos.y - 20))
+        screen.blit(text, (screen_pos.x - text.get_width()//2, draw_y - radius - 15))
 
 
 class ShardPickup:
@@ -194,7 +217,7 @@ class ShardPickup:
         self.collecting = False
         self.target = None
 
-    def update(self, dt, player):
+    def update(self, player, dt):  # FIXED: Changed signature to match call in room.py
         if not self.active:
             return False
         
@@ -231,17 +254,45 @@ class ShardPickup:
         
         screen_pos = camera.apply_pos(self.pos)
         
-        # Shard - draw as a diamond
+        # Add bobbing to the position
+        bob_y = math.sin(self.timer * 3.5) * 5
+        draw_y = screen_pos.y + bob_y
+        
+        # Shard - KEEP AS DIAMOND (special shard shape)
+        size = 14
         points = [
-            (screen_pos.x, screen_pos.y - 10),
-            (screen_pos.x + 8, screen_pos.y),
-            (screen_pos.x, screen_pos.y + 10),
-            (screen_pos.x - 8, screen_pos.y)
+            (screen_pos.x, draw_y - size),  # Top
+            (screen_pos.x + size, draw_y),  # Right
+            (screen_pos.x, draw_y + size),  # Bottom
+            (screen_pos.x - size, draw_y)   # Left
         ]
+        
         pygame.draw.polygon(screen, (255, 215, 0), points)
         pygame.draw.polygon(screen, (255, 255, 150), points, 2)
+        
+        # Add inner sparkle effect
+        inner_points = [
+            (screen_pos.x, draw_y - size // 2),
+            (screen_pos.x + size // 2, draw_y),
+            (screen_pos.x - size // 2, draw_y)
+        ]
+        pygame.draw.polygon(screen, (255, 255, 200), inner_points)
+        
+        # Add glow effect
+        pulse = math.sin(self.timer * 6) * 2 + 2
+        glow_surface = pygame.Surface((size * 3, size * 3), pygame.SRCALPHA)
+        
+        # Create diamond glow
+        glow_points = [
+            (size * 1.5, size * 1.5 - size - pulse),
+            (size * 1.5 + size + pulse, size * 1.5),
+            (size * 1.5, size * 1.5 + size + pulse),
+            (size * 1.5 - size - pulse, size * 1.5)
+        ]
+        pygame.draw.polygon(glow_surface, (255, 215, 0, 60), glow_points)
+        screen.blit(glow_surface, (screen_pos.x - size * 1.5, draw_y - size * 1.5))
         
         # Shard amount text
         font = pygame.font.Font(None, 20)
         text = font.render(str(self.amount), True, (255, 255, 255))
-        screen.blit(text, (screen_pos.x - text.get_width()//2, screen_pos.y - 25))
+        screen.blit(text, (screen_pos.x - text.get_width()//2, draw_y - size - 20))

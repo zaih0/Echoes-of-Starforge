@@ -16,7 +16,8 @@ class Weapon:
         spread=0.0
     ):
         self.name = name
-        self.type = wtype          # "ranged" or "melee"
+        self.type = "weapon"  # Add type attribute
+        self.wtype = wtype          # "ranged" or "melee"
         self.fire_rate = fire_rate
         self.damage = damage
         self.speed = speed
@@ -66,4 +67,6 @@ def weapon_pool():
         Weapon("Heavy Revolver", "ranged", fire_rate=1.2, damage=45, speed=900),
         Weapon("Forge Blade", "melee", fire_rate=1.1, damage=50),
         Weapon("Twin Daggers", "melee", fire_rate=2.0, damage=25),
+        Weapon("Plasma Rifle", "ranged", fire_rate=4.0, damage=30, speed=850),
+        Weapon("Shotgun", "ranged", fire_rate=1.5, damage=8, pellets=5, spread=0.2),
     ]

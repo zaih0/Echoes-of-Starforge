@@ -1,4 +1,4 @@
-# core/dungeon_generator.py
+# core/dungeon_generator.py - UPDATED
 import random
 from typing import List
 from core.settings import *
@@ -32,14 +32,20 @@ class DungeonGenerator:
         if len(self.rooms) < num_rooms:
             self._add_extra_rooms(num_rooms - len(self.rooms))
         
-        # Connect rooms (simplified - just add basic connections)
-        self._connect_rooms()
+        # Connect rooms (set connections based on grid adjacency)
+        self._set_room_connections()
         
-        # Generate room contents
+        # Generate room contents AFTER connections are set
         for i, room in enumerate(self.rooms):
-            if room.room_type != "start":
-                room.generate_contents(self.level)
+            room.generate_contents(self.level)
+            print(f"Room {i} at ({room.grid_x},{room.grid_y}) type: {room.room_type}, connections: {room.connections}")
         
+        # Ensure start room has proper door states
+        start_room = self.rooms[0]
+        for direction in start_room.door_open:
+            start_room.door_open[direction] = True
+        
+        print(f"Generated {len(self.rooms)} rooms")
         return self.rooms
     
     def _generate_path_to_boss(self, start_x, start_y, num_rooms):
@@ -66,16 +72,12 @@ class DungeonGenerator:
             self.rooms.append(room)
             self.room_grid[current_y][current_x] = room
             
-            # Connect to previous room
-            if i > 0:
-                previous_room = self.rooms[-2]  # Get previous room
-                previous_room.connections.append((0, 1))  # Connected down
-                room.connections.append((0, -1))  # Connected up
+            # Don't set connections here - will be done in _set_room_connections
     
     def _add_extra_rooms(self, num_extra):
         """Add extra rooms branching from existing ones"""
         attempts = 0
-        max_attempts = num_extra * 5  # Limit attempts to prevent infinite loop
+        max_attempts = num_extra * 10
         
         while len(self.rooms) < (len(self.rooms) + num_extra) and attempts < max_attempts:
             attempts += 1
@@ -87,6 +89,7 @@ class DungeonGenerator:
                 # Check all directions
                 for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
                     nx, ny = x + dx, y + dy
+                    # Check if position is within bounds AND empty
                     if (0 <= nx < GRID_SIZE and 0 <= ny < GRID_SIZE and 
                         self.room_grid[ny][nx] is None):
                         possible_parents.append((room, dx, dy, nx, ny))
@@ -105,15 +108,37 @@ class DungeonGenerator:
             room = Room(len(self.rooms), nx, ny, room_type)
             self.rooms.append(room)
             self.room_grid[ny][nx] = room
-            
-            # Connect rooms
-            parent.connections.append((dx, dy))
-            room.connections.append((-dx, -dy))
     
-    def _connect_rooms(self):
-        """Ensure all rooms are properly connected"""
-        # Connections are already made during room generation
-        pass
+    def _set_room_connections(self):
+        """Set connections between rooms based on grid adjacency"""
+        for room in self.rooms:
+            x, y = room.grid_x, room.grid_y
+            
+            # Check all 4 directions for adjacent rooms
+            directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+            for dx, dy in directions:
+                nx, ny = x + dx, y + dy
+                
+                # Check if neighbor is within bounds
+                if 0 <= nx < GRID_SIZE and 0 <= ny < GRID_SIZE:
+                    neighbor = self.room_grid[ny][nx]
+                    
+                    # If there's a room in this direction, add connection
+                    if neighbor is not None:
+                        # Add connection to current room
+                        if (dx, dy) not in room.connections:
+                            room.connections.append((dx, dy))
+                        
+                        # Add reverse connection to neighbor
+                        reverse_dir = (-dx, -dy)
+                        if reverse_dir not in neighbor.connections:
+                            neighbor.connections.append(reverse_dir)
+    
+    def get_room_at(self, grid_x, grid_y):
+        """Get room at grid coordinates"""
+        if 0 <= grid_y < GRID_SIZE and 0 <= grid_x < GRID_SIZE:
+            return self.room_grid[grid_y][grid_x]
+        return None
     
     def get_start_room(self):
         return self.rooms[0]

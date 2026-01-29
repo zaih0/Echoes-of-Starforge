@@ -37,9 +37,10 @@ class SwordArc:
         
         return abs(angle) < self.arc_angle / 2
 
-    def draw(self, screen, camera_offset=(0, 0)):
-        offset_x, offset_y = camera_offset
-        draw_pos = pygame.Vector2(self.pos.x - offset_x, self.pos.y - offset_y)
+    def draw(self, screen, camera):
+        """Draw melee attack with camera offset"""
+        # Get screen position using camera
+        screen_pos = camera.apply_pos(self.pos)
         
         # Calculate arc angles
         start_angle = math.atan2(self.dir.y, self.dir.x) - self.arc_angle / 2
@@ -47,8 +48,8 @@ class SwordArc:
         
         # Draw arc
         rect = pygame.Rect(
-            draw_pos.x - self.radius,
-            draw_pos.y - self.radius,
+            screen_pos.x - self.radius,
+            screen_pos.y - self.radius,
             self.radius * 2,
             self.radius * 2
         )
@@ -60,4 +61,4 @@ class SwordArc:
         # Create a surface for the arc with transparency
         arc_surface = pygame.Surface((self.radius * 2, self.radius * 2), pygame.SRCALPHA)
         pygame.draw.arc(arc_surface, color, arc_surface.get_rect(), start_angle, end_angle, 4)
-        screen.blit(arc_surface, (draw_pos.x - self.radius, draw_pos.y - self.radius))
+        screen.blit(arc_surface, (screen_pos.x - self.radius, screen_pos.y - self.radius))

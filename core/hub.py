@@ -1,10 +1,11 @@
-# core/hub.py
+# core/hub.py - UPDATED WITH FONT MANAGER
 import pygame
 import json
 import os
 import random
 from typing import Dict, List
 from core.settings import WIDTH, HEIGHT
+from core.font_manager import font_manager  # ADD THIS
 
 class SkillTree:
     def __init__(self):
@@ -89,11 +90,7 @@ class Hub:
         self.background = pygame.Surface((WIDTH, HEIGHT))
         self._create_background()
         
-        # Fonts
-        self.title_font = pygame.font.Font(None, 72)
-        self.header_font = pygame.font.Font(None, 48)
-        self.normal_font = pygame.font.Font(None, 32)
-        self.small_font = pygame.font.Font(None, 24)
+        # REMOVE OLD FONTS - USE FONT MANAGER INSTEAD
         
     def _create_background(self):
         """Create starry background for hub"""
@@ -132,22 +129,22 @@ class Hub:
         screen.blit(self.background, (0, 0))
         
         # Draw title with proper spacing
-        title = self.title_font.render("STARFORGE HUB", True, self.colors["title"])
+        title = font_manager.render("STARFORGE HUB", "title", self.colors["title"])
         screen.blit(title, (WIDTH//2 - title.get_width()//2, 40))
         
         # Draw shard count with good spacing
-        shard_text = self.header_font.render(f"Stellar Shards: {self.skill_tree.shards}", 
-                                           True, self.colors["shard"])
-        screen.blit(shard_text, (WIDTH//2 - shard_text.get_width()//2, 140))  # More spacing from title
+        shard_text = font_manager.render(f"Stellar Shards: {self.skill_tree.shards}", 
+                                       "large", self.colors["shard"])
+        screen.blit(shard_text, (WIDTH//2 - shard_text.get_width()//2, 140))
         
         # Draw skill tree title
-        tree_title = self.header_font.render("STELLAR FORGE", True, (180, 220, 255))
+        tree_title = font_manager.render("STELLAR FORGE", "large", (180, 220, 255))
         screen.blit(tree_title, (WIDTH//2 - tree_title.get_width()//2, 220))
         
         # Draw total shards earned UNDER the Stellar Forge title
-        total_text = self.small_font.render(f"Total Shards Earned: {self.skill_tree.total_shards_earned}", 
-                                          True, (200, 200, 200))
-        screen.blit(total_text, (WIDTH//2 - total_text.get_width()//2, 280))  # Under Stellar Forge
+        total_text = font_manager.render(f"Total Shards Earned: {self.skill_tree.total_shards_earned}", 
+                                       "normal", (200, 200, 200))
+        screen.blit(total_text, (WIDTH//2 - total_text.get_width()//2, 280))
         
         # Draw skill tree
         self._draw_skill_tree(screen)
@@ -160,7 +157,7 @@ class Hub:
         ]
         
         for i, instruction in enumerate(instructions):
-            text = self.small_font.render(instruction, True, self.colors["instruction"])
+            text = font_manager.render(instruction, "small", self.colors["instruction"])
             screen.blit(text, (WIDTH//2 - text.get_width()//2, HEIGHT - 120 + i * 30))
     
     def _draw_skill_tree(self, screen):
@@ -177,26 +174,26 @@ class Hub:
             # Skill background color
             bg_color = self.colors["skill_hover"] if i == self.selected_skill else self.colors["skill_bg"]
             
-            skill_rect = pygame.Rect(WIDTH//2 - 300, y, 600, 65)  # Increased height from 60 to 65
+            skill_rect = pygame.Rect(WIDTH//2 - 300, y, 600, 65)
             self.skill_rects.append(skill_rect)
             pygame.draw.rect(screen, bg_color, skill_rect, border_radius=8)
             pygame.draw.rect(screen, (60, 100, 150), skill_rect, 2, border_radius=8)
             
             # Skill name and level with more spacing
-            name_text = self.normal_font.render(skill["name"], True, self.colors["skill_text"])
+            name_text = font_manager.render(skill["name"], "normal", self.colors["skill_text"])
             screen.blit(name_text, (skill_rect.x + 20, skill_rect.y + 12))
             
-            level_text = self.small_font.render(f"Level: {skill['level']}/{skill['max_level']}", 
-                                              True, (200, 200, 200))
+            level_text = font_manager.render(f"Level: {skill['level']}/{skill['max_level']}", 
+                                           "small", (200, 200, 200))
             screen.blit(level_text, (skill_rect.x + 20, skill_rect.y + 40))
             
             # Cost
             cost_color = self.colors["cost_available"] if self.skill_tree.shards >= skill["cost"] else self.colors["cost_unavailable"]
-            cost_text = self.normal_font.render(f"{skill['cost']} Shards", True, cost_color)
+            cost_text = font_manager.render(f"{skill['cost']} Shards", "normal", cost_color)
             screen.blit(cost_text, (skill_rect.right - 120, skill_rect.y + 22))
             
             # Description with more spacing
-            desc_text = self.small_font.render(skill["description"], True, self.colors["skill_desc"])
+            desc_text = font_manager.render(skill["description"], "small", self.colors["skill_desc"])
             screen.blit(desc_text, (skill_rect.x + 250, skill_rect.y + 40))
             
             # Progress bar for skill level

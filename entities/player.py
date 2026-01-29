@@ -3,7 +3,7 @@ import pygame
 import random
 import math
 from core.settings import PLAYER_RADIUS, PLAYER_SPEED, PLAYER_MAX_HP
-from entities.melee import SwordArc
+from entities.melee import SwordArc  # ADDED IMPORT
 
 class Player:
     def __init__(self, x, y, skill_bonuses=None):
@@ -16,6 +16,7 @@ class Player:
         self.hp = PLAYER_MAX_HP
 
         self.weapon = None
+        self.charms = []  # List of active charms
         self.skill_bonuses = skill_bonuses or {}
         
         # Apply skill tree bonuses
@@ -30,6 +31,8 @@ class Player:
         self.damage_reduction = 0.0
         self.multi_shot = 1
         self.bullet_speed_multiplier = 1.0
+        self.bullet_pierce = 0
+        self.player_level = 1
         
         # Timers
         self.shoot_timer = 0
@@ -42,6 +45,7 @@ class Player:
         # Visual effects
         self.hit_flash_timer = 0
         self.level_up_effect_timer = 0
+        self.level_text_timer = 0
 
     def _apply_skill_bonuses(self):
         """Apply permanent skill tree bonuses"""
@@ -55,6 +59,19 @@ class Player:
         # Speed bonus
         if "speed" in bonuses:
             self.speed = self.base_speed * (1 + bonuses["speed"] * 0.05)
+        
+        # Apply other skill bonuses to multipliers
+        if "damage" in bonuses:
+            self.damage_multiplier *= (1 + bonuses["damage"] * 0.1)
+        if "reload" in bonuses:
+            self.fire_rate_multiplier *= (1 + bonuses["reload"] * 0.15)
+
+    def add_charm(self, charm):
+        """Add a charm to the player"""
+        self.charms.append(charm)
+        # Apply charm effect immediately
+        charm.effect(self)
+        print(f"Added charm: {charm.name} - {charm.description}")
 
     def take_damage(self, dmg):
         """Take damage with damage reduction"""
@@ -89,12 +106,8 @@ class Player:
         
         # Update facing direction based on mouse
         if mouse_pos:
-            # Convert screen mouse position to world position
-            world_mouse_pos = pygame.Vector2(
-                mouse_pos[0] + camera.camera.x,
-                mouse_pos[1] + camera.camera.y
-            )
-            direction = world_mouse_pos - self.pos
+            # In single-screen mode, mouse position is already in world coordinates
+            direction = pygame.Vector2(mouse_pos[0], mouse_pos[1]) - self.pos
             if direction.length_squared() > 0:
                 self.facing = direction.normalize()
 
@@ -111,6 +124,7 @@ class Player:
             self.hit_flash_timer -= dt
         if self.level_up_effect_timer > 0:
             self.level_up_effect_timer -= dt
+            self.level_text_timer = self.level_up_effect_timer
         if self.regen_timer > 0:
             self.regen_timer -= dt
         
@@ -124,10 +138,6 @@ class Player:
             if self.shoot_timer <= 0:
                 fire_rate = self.weapon.fire_rate * self.fire_rate_multiplier
                 
-                # Apply skill tree reload bonus
-                if "reload" in self.skill_bonuses:
-                    fire_rate *= (1 + self.skill_bonuses["reload"] * 0.15)
-                
                 # Multi-shot
                 for i in range(self.multi_shot):
                     if self.multi_shot > 1:
@@ -137,7 +147,7 @@ class Player:
                     else:
                         direction = self.facing
                     
-                    # Fire bullet from player position (in world coordinates)
+                    # Fire bullet from player position
                     bullet = self.weapon.fire(self.pos + direction * (PLAYER_RADIUS + 20), direction)
                     if bullet:
                         # Apply bullet speed multiplier
@@ -145,14 +155,14 @@ class Player:
                         
                         # Apply damage multiplier
                         damage_mult = self.damage_multiplier
-                        if "damage" in self.skill_bonuses:
-                            damage_mult *= (1 + self.skill_bonuses["damage"] * 0.1)
                         
                         # Critical strike chance
                         if random.random() < self.crit_chance:
                             damage_mult *= 2.0  # Double damage on crit
+                            bullet.color = (255, 255, 100)  # Yellow for crit
                         
                         bullet.damage *= damage_mult
+                        bullet.pierce = self.bullet_pierce
                         bullets.append(bullet)
                 
                 self.shoot_timer = 1 / fire_rate
@@ -161,7 +171,7 @@ class Player:
         # Melee attack with right mouse button
         if mouse_pressed[2] and self.melee_cooldown <= 0:  # Right mouse button
             self.sword_swing_timer = 0.15
-            # Create melee attack at player position (world coordinates)
+            # Create melee attack at player position
             room.melees.append(SwordArc(self.pos.copy(), self.facing))
             self.melee_cooldown = 0.4
 
@@ -195,36 +205,25 @@ class Player:
             flash_pos = screen_pos + self.facing * (PLAYER_RADIUS + 20)
             pygame.draw.circle(screen, (255, 220, 120), (int(flash_pos.x), int(flash_pos.y)), 10)
 
-        # Health bar
-        self._draw_health_bar(screen, screen_pos)
+        # Draw level above character body
+        self._draw_level_indicator(screen, screen_pos)
         
         # Level up effect particles
         if self.level_up_effect_timer > 0:
             self._draw_level_up_effect(screen, screen_pos)
 
-    def _draw_health_bar(self, screen, screen_pos):
-        bar_w = 80
-        bar_h = 10
-        ratio = self.hp / self.max_hp
+    def _draw_level_indicator(self, screen, screen_pos):
+        """Draw player level above character"""
+        font = pygame.font.Font(None, 28)
+        level_text = font.render(f"Lv.{self.player_level}", True, (255, 215, 0))
+        text_rect = level_text.get_rect(center=(screen_pos.x, screen_pos.y - PLAYER_RADIUS - 20))
         
-        # Background
-        bar_rect = pygame.Rect(
-            screen_pos.x - bar_w//2,
-            screen_pos.y - PLAYER_RADIUS - 25,
-            bar_w,
-            bar_h
-        )
-        pygame.draw.rect(screen, (40, 40, 40), bar_rect)
+        # Draw background
+        bg_rect = text_rect.inflate(10, 6)
+        pygame.draw.rect(screen, (40, 40, 60, 200), bg_rect, border_radius=4)
+        pygame.draw.rect(screen, (255, 215, 0, 150), bg_rect, 2, border_radius=4)
         
-        # Health fill
-        fill_color = (220, 60, 60)  # Red when low health
-        if ratio > 0.5:
-            fill_color = (60, 220, 60)  # Green when healthy
-        elif ratio > 0.25:
-            fill_color = (220, 220, 60)  # Yellow when medium
-        
-        pygame.draw.rect(screen, fill_color, 
-                        (bar_rect.x, bar_rect.y, bar_w * ratio, bar_h))
+        screen.blit(level_text, text_rect)
 
     def _draw_level_up_effect(self, screen, screen_pos):
         """Draw particle effect for level up"""

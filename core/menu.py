@@ -4,6 +4,7 @@ import json
 import os
 import random
 from core.settings import WIDTH, HEIGHT
+from core.font_manager import font_manager  
 
 class MainMenu:
     def __init__(self):
@@ -11,10 +12,10 @@ class MainMenu:
         self.options = ["New Game", "Continue", "Hub", "Quit"]
         self.save_exists = os.path.exists("save_data.json")
         
-        # Fonts scaled properly
-        self.title_font = pygame.font.Font(None, 96)
-        self.option_font = pygame.font.Font(None, 48)
-        self.small_font = pygame.font.Font(None, 24)
+        # Fonts using pixel font
+        self.title_font = font_manager.get_font("title")
+        self.option_font = font_manager.get_font("large")
+        self.small_font = font_manager.get_font("normal")
         
         # Menu option rectangles for mouse clicks
         self.option_rects = []
