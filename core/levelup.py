@@ -92,45 +92,68 @@ class LevelUpSystem:
     def draw(self, screen):
         if not self.showing_upgrades:
             return
-        
+
         # Semi-transparent overlay
         overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-        overlay.fill((0, 0, 0, 200))
+        overlay.fill((0, 0, 0, 210))
         screen.blit(overlay, (0, 0))
-        
-        # Title
-        font_large = pygame.font.Font(None, 72)
-        title = font_large.render("LEVEL UP!", True, (255, 215, 0))
-        screen.blit(title, (WIDTH//2 - title.get_width()//2, 50))
-        
-        font_medium = pygame.font.Font(None, 48)
-        level_text = font_medium.render(f"Level {self.player_level}", True, (255, 255, 255))
-        screen.blit(level_text, (WIDTH//2 - level_text.get_width()//2, 130))
-        
-        font_small = pygame.font.Font(None, 32)
-        instruction = font_small.render("Choose an upgrade (1-3):", True, (200, 200, 200))
-        screen.blit(instruction, (WIDTH//2 - instruction.get_width()//2, 180))
-        
-        # Draw upgrade options
+
+        # --- Fonts ---
+        font_title  = pygame.font.Font(None, 96)
+        font_level  = pygame.font.Font(None, 56)
+        font_hint   = pygame.font.Font(None, 40)
+        font_name   = pygame.font.Font(None, 52)
+        font_desc   = pygame.font.Font(None, 36)
+        font_num    = pygame.font.Font(None, 56)
+
+        # --- Card dimensions (scale to screen) ---
+        card_w   = min(900, WIDTH - 200)
+        card_h   = 150
+        card_gap = 28
+        cards_total_h = len(self.available_upgrades) * (card_h + card_gap) - card_gap
+
+        # --- Vertical layout ---
+        header_h   = 240          # space reserved above the cards
+        block_h    = header_h + cards_total_h + 60   # +60 for hint below
+        block_top  = HEIGHT // 2 - block_h // 2
+
+        title_y    = block_top + 10
+        level_y    = title_y + 90
+        cards_top  = block_top + header_h
+        hint_y     = cards_top + cards_total_h + 20
+
+        # --- Title ---
+        title_surf = font_title.render("LEVEL UP!", True, (255, 215, 0))
+        screen.blit(title_surf, title_surf.get_rect(centerx=WIDTH // 2, top=title_y))
+
+        # Level sub-text
+        level_surf = font_level.render(f"Now Level {self.player_level}", True, (220, 240, 255))
+        screen.blit(level_surf, level_surf.get_rect(centerx=WIDTH // 2, top=level_y))
+
+        # --- Upgrade cards ---
+        card_x = WIDTH // 2 - card_w // 2
         for i, upgrade in enumerate(self.available_upgrades):
-            y = 250 + i * 120
-            
-            # Upgrade box
-            box_rect = pygame.Rect(WIDTH//2 - 250, y, 500, 100)
-            pygame.draw.rect(screen, (40, 50, 70), box_rect, border_radius=10)
-            pygame.draw.rect(screen, (80, 100, 120), box_rect, 3, border_radius=10)
-            
-            # Number indicator
-            num_font = pygame.font.Font(None, 36)
-            num_text = num_font.render(str(i+1), True, (255, 215, 0))
-            screen.blit(num_text, (box_rect.x + 20, box_rect.centery - num_text.get_height()//2))
-            
+            card_y = cards_top + i * (card_h + card_gap)
+            box_rect = pygame.Rect(card_x, card_y, card_w, card_h)
+
+            # Card background
+            pygame.draw.rect(screen, (30, 40, 65), box_rect, border_radius=14)
+            pygame.draw.rect(screen, (90, 120, 180), box_rect, 3, border_radius=14)
+
+            # Number badge
+            badge_rect = pygame.Rect(box_rect.x + 20, box_rect.centery - 28, 56, 56)
+            pygame.draw.rect(screen, (255, 215, 0), badge_rect, border_radius=10)
+            num_surf = font_num.render(str(i + 1), True, (20, 20, 40))
+            screen.blit(num_surf, num_surf.get_rect(center=badge_rect.center))
+
             # Upgrade name
-            name_font = pygame.font.Font(None, 36)
-            name_text = name_font.render(upgrade["name"], True, (255, 255, 255))
-            screen.blit(name_text, (box_rect.x + 60, box_rect.y + 20))
-            
+            name_surf = font_name.render(upgrade["name"], True, (255, 255, 255))
+            screen.blit(name_surf, (box_rect.x + 96, box_rect.y + 28))
+
             # Description
-            desc_font = pygame.font.Font(None, 24)
-            desc_text = desc_font.render(upgrade["description"], True, (180, 220, 255))
-            screen.blit(desc_text, (box_rect.x + 60, box_rect.y + 55))
+            desc_surf = font_desc.render(upgrade["description"], True, (160, 210, 255))
+            screen.blit(desc_surf, (box_rect.x + 96, box_rect.y + 86))
+
+        # --- Hint ---
+        hint_surf = font_hint.render("Press  1 / 2 / 3  to choose", True, (180, 180, 200))
+        screen.blit(hint_surf, hint_surf.get_rect(centerx=WIDTH // 2, top=hint_y))

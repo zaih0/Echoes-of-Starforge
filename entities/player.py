@@ -18,10 +18,7 @@ class Player:
         self.weapon = None
         self.charms = []  # List of active charms
         self.skill_bonuses = skill_bonuses or {}
-        
-        # Apply skill tree bonuses
-        self._apply_skill_bonuses()
-        
+
         # Temporary level-up bonuses
         self.damage_multiplier = 1.0
         self.fire_rate_multiplier = 1.0
@@ -47,6 +44,9 @@ class Player:
         self.level_up_effect_timer = 0
         self.level_text_timer = 0
 
+        # Apply skill tree bonuses (must happen after multiplier attributes are initialized)
+        self._apply_skill_bonuses()
+
     def _apply_skill_bonuses(self):
         """Apply permanent skill tree bonuses"""
         bonuses = self.skill_bonuses
@@ -68,10 +68,18 @@ class Player:
 
     def add_charm(self, charm):
         """Add a charm to the player"""
-        self.charms.append(charm)
-        # Apply charm effect immediately
-        charm.effect(self)
-        print(f"Added charm: {charm.name} - {charm.description}")
+        # Stack identical charms instead of adding duplicate list entries
+        existing = next((c for c in self.charms if c.name == charm.name), None)
+        if existing:
+            existing.stacks = getattr(existing, "stacks", 1) + 1
+            # Apply effect again for each stack
+            charm.effect(self)
+            print(f"Stacked charm: {charm.name} x{existing.stacks}")
+        else:
+            charm.stacks = 1
+            self.charms.append(charm)
+            charm.effect(self)
+            print(f"Added charm: {charm.name} - {charm.description}")
 
     def take_damage(self, dmg):
         """Take damage with damage reduction"""
@@ -130,7 +138,7 @@ class Player:
         
         # Health regeneration
         if self.health_regen > 0 and self.regen_timer <= 0:
-            self.heal(self.health_regen * dt)
+            self.heal(self.health_regen)
             self.regen_timer = 1.0
         
         # Shooting with mouse
@@ -147,23 +155,25 @@ class Player:
                     else:
                         direction = self.facing
                     
-                    # Fire bullet from player position
-                    bullet = self.weapon.fire(self.pos + direction * (PLAYER_RADIUS + 20), direction)
-                    if bullet:
-                        # Apply bullet speed multiplier
-                        bullet.vel *= self.bullet_speed_multiplier
-                        
-                        # Apply damage multiplier
-                        damage_mult = self.damage_multiplier
-                        
-                        # Critical strike chance
-                        if random.random() < self.crit_chance:
-                            damage_mult *= 2.0  # Double damage on crit
-                            bullet.color = (255, 255, 100)  # Yellow for crit
-                        
-                        bullet.damage *= damage_mult
-                        bullet.pierce = self.bullet_pierce
-                        bullets.append(bullet)
+                    # Fire weapon pellets from player position
+                    pellet_count = max(1, int(getattr(self.weapon, "pellets", 1)))
+                    for _ in range(pellet_count):
+                        bullet = self.weapon.fire(self.pos + direction * (PLAYER_RADIUS + 20), direction)
+                        if bullet:
+                            # Apply bullet speed multiplier
+                            bullet.vel *= self.bullet_speed_multiplier
+                            
+                            # Apply damage multiplier
+                            damage_mult = self.damage_multiplier
+                            
+                            # Critical strike chance
+                            if random.random() < self.crit_chance:
+                                damage_mult *= 2.0  # Double damage on crit
+                                bullet.color = (255, 255, 100)  # Yellow for crit
+                            
+                            bullet.damage *= damage_mult
+                            bullet.pierce = self.bullet_pierce
+                            bullets.append(bullet)
                 
                 self.shoot_timer = 1 / fire_rate
                 self.shoot_flash_timer = 0.08

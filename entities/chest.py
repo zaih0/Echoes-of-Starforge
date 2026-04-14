@@ -35,11 +35,16 @@ class Chest:
             return True
         return False
     
-    def update(self, dt):
+    def update(self, player, dt, keys):
         """Update chest state"""
         if self.open_cooldown > 0:
             self.open_cooldown -= dt
-        
+
+        # Open chest when player presses E nearby
+        if player and not self.opened and self.can_open(player.pos):
+            if keys[pygame.K_e]:
+                self.open(player)
+
         if self.pickup:
             self.pickup.update(dt)
     

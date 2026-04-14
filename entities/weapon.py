@@ -68,5 +68,5 @@ def weapon_pool():
         Weapon("Forge Blade", "melee", fire_rate=1.1, damage=50),
         Weapon("Twin Daggers", "melee", fire_rate=2.0, damage=25),
         Weapon("Plasma Rifle", "ranged", fire_rate=4.0, damage=30, speed=850),
-        Weapon("Shotgun", "ranged", fire_rate=1.5, damage=8, pellets=5, spread=0.2),
+        Weapon("Shotgun", "ranged", fire_rate=1.5, damage=8, pellets=2, spread=8.0),
     ]

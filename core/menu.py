@@ -10,7 +10,15 @@ class MainMenu:
     def __init__(self):
         self.selected_option = 0
         self.options = ["New Game", "Continue", "Hub", "Quit"]
-        self.save_exists = os.path.exists("save_data.json")
+        # Continue is only enabled when there is an in-progress run saved
+        self.save_exists = False
+        if os.path.exists("save_data.json"):
+            try:
+                with open("save_data.json", "r") as _f:
+                    _d = json.load(_f)
+                self.save_exists = "run" in _d
+            except Exception:
+                pass
         
         # Fonts using pixel font
         self.title_font = font_manager.get_font("title")
@@ -19,6 +27,13 @@ class MainMenu:
         
         # Menu option rectangles for mouse clicks
         self.option_rects = []
+
+        # Story prologue (title screen)
+        self.prologue_lines = [
+            "The Starforge shattered and the vaults turned wild.",
+            "You are a Forged Warden, sent to reclaim Stellar Shards.",
+            "Descend. Survive. Rekindle the forge before the echoes consume it."
+        ]
         
         # Color scheme that fits the aesthetic
         self.colors = {
@@ -90,7 +105,7 @@ class MainMenu:
         
         # Draw title with subtle glow effect
         title = self.title_font.render("ECHOES OF STARFORGE", True, self.colors["title"])
-        title_rect = title.get_rect(center=(WIDTH//2, HEIGHT//6))
+        title_rect = title.get_rect(center=(WIDTH//2, int(HEIGHT * 0.20)))
         
         # Draw title glow
         for i in range(3):
@@ -98,13 +113,34 @@ class MainMenu:
             glow_color = (*self.colors["title"][:3], 30 - i*10)
             glow_text = self.title_font.render("ECHOES OF STARFORGE", True, glow_color)
             glow_surf.blit(glow_text, (i*2, i*2))
-            screen.blit(glow_surf, (WIDTH//2 - glow_surf.get_width()//2, HEIGHT//6 - title_rect.height//2))
+            screen.blit(glow_surf, (WIDTH//2 - glow_surf.get_width()//2, title_rect.top - i*2))
         
         screen.blit(title, title_rect)
         
-        # Draw menu options with MORE SPACING
+        # Subtitle / tagline
+        tagline_surf = self.small_font.render("A dungeon-crawling adventure", True, (140, 170, 210))
+        screen.blit(tagline_surf, tagline_surf.get_rect(center=(WIDTH//2, title_rect.bottom + 28)))
+
+        # Prologue panel under title
+        lore_top = title_rect.bottom + 52
+        lore_line_h = 24
+        lore_panel_h = 22 + lore_line_h * len(self.prologue_lines)
+        lore_panel_w = min(1300, WIDTH - 240)
+        lore_panel = pygame.Rect(WIDTH//2 - lore_panel_w//2, lore_top, lore_panel_w, lore_panel_h)
+        pygame.draw.rect(screen, (15, 22, 45), lore_panel, border_radius=10)
+        pygame.draw.rect(screen, self.colors["border"], lore_panel, 2, border_radius=10)
+
+        for i, line in enumerate(self.prologue_lines):
+            lore_text = font_manager.render(line, "small", self.colors["text"])
+            lore_rect = lore_text.get_rect(centerx=WIDTH // 2, y=lore_top + 10 + i * lore_line_h)
+            screen.blit(lore_text, lore_rect)
+        
+        # Draw menu options
         self.option_rects = []
-        start_y = HEIGHT//2 - 80  # Adjusted for better centering
+        option_spacing = 145           # px between option centres
+        total_h = (len(self.options) - 1) * option_spacing
+        min_start_y = lore_panel.bottom + 34
+        start_y = max(int(HEIGHT * 0.60) - total_h // 2, min_start_y)
         
         for i, option in enumerate(self.options):
             # Determine colors based on state
@@ -117,49 +153,52 @@ class MainMenu:
                 text = option
                 enabled = True
             
-            # Draw option with MORE VERTICAL SPACING
+            # Draw option with vertical spacing
+            # Draw option
             option_surf = self.option_font.render(text, True, color)
-            option_rect = option_surf.get_rect(center=(WIDTH//2, start_y + i * 100))  # Increased from 80 to 100
+            option_rect = option_surf.get_rect(center=(WIDTH//2, start_y + i * option_spacing))
             
-            # Store rectangle for mouse interaction (slightly larger)
-            hover_rect = option_rect.inflate(80, 40)  # Increased from 60,30 to 80,40
+            # Store rectangle for mouse interaction
+            hover_rect = option_rect.inflate(140, 50)
             self.option_rects.append(hover_rect)
             
             # Draw hover effect
             if i == self.selected_option and enabled:
-                # Draw a subtle glow behind the option
                 glow_surf = pygame.Surface((hover_rect.width, hover_rect.height), pygame.SRCALPHA)
-                pygame.draw.rect(glow_surf, self.colors["highlight"], 
+                pygame.draw.rect(glow_surf, self.colors["highlight"],
                                glow_surf.get_rect(), border_radius=15)
                 screen.blit(glow_surf, hover_rect)
-                
-                # Draw border
                 pygame.draw.rect(screen, self.colors["border"], hover_rect, 3, border_radius=15)
             
             screen.blit(option_surf, option_rect)
-            
-            # Draw description for selected option (if enabled) with MORE SPACING
-            if i == self.selected_option and enabled:
-                desc = self._get_option_description(option)
+        
+        # Show description for selected option in a fixed panel below all buttons
+        if 0 <= self.selected_option < len(self.options):
+            sel_opt = self.options[self.selected_option]
+            sel_enabled = not (sel_opt == "Continue" and not self.save_exists)
+            if sel_enabled:
+                desc = self._get_option_description(sel_opt)
+                desc_y = start_y + total_h + 80
                 desc_surf = self.small_font.render(desc, True, self.colors["text"])
-                desc_rect = desc_surf.get_rect(center=(WIDTH//2, start_y + i * 100 + 50))  # Increased from +40 to +50
+                desc_rect = desc_surf.get_rect(centerx=WIDTH // 2, top=desc_y)
+                box_rect = desc_rect.inflate(80, 24)
+                pygame.draw.rect(screen, (15, 22, 45), box_rect, border_radius=10)
+                pygame.draw.rect(screen, self.colors["border"], box_rect, 2, border_radius=10)
                 screen.blit(desc_surf, desc_rect)
         
-        # Draw instructions at the bottom with MORE SPACING
+        # Draw instructions at the bottom
         instructions = [
             "Use mouse or arrow keys to navigate",
             "Click or press ENTER to select",
             "Press ESC to quit"
         ]
         
+        instr_bottom = HEIGHT - 50
+        instr_spacing = 34
         for i, instruction in enumerate(instructions):
+            y = instr_bottom - (len(instructions) - 1 - i) * instr_spacing
             text = self.small_font.render(instruction, True, self.colors["instruction"])
-            screen.blit(text, (WIDTH//2 - text.get_width()//2, HEIGHT - 150 + i * 35))  # Increased from 30 to 35
-        
-        # Draw version info
-        version = "v0.1.0 | Echoes of Starforge"
-        version_surf = self.small_font.render(version, True, (150, 150, 180))
-        screen.blit(version_surf, (WIDTH//2 - version_surf.get_width()//2, HEIGHT - 40))
+            screen.blit(text, (WIDTH//2 - text.get_width()//2, y))
     
     def _get_option_description(self, option):
         """Get description for menu option"""

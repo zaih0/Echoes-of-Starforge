@@ -4,8 +4,9 @@ import random
 import math
 from core.settings import *
 from entities.enemy import Enemy, XPPickup, ShardPickup
-from entities.chest import Chest
+from entities.chest import Chest, FloatingPickup
 from entities.weapon import weapon_pool
+from entities.charm import get_random_charm
 from entities.melee import SwordArc
 
 class Room:
@@ -27,6 +28,7 @@ class Room:
         self.melees = []
         self.xp_pickups = []
         self.shard_pickups = []
+        self.ground_pickups = []
         self.cleared = False
         self.has_boss = False
         
@@ -177,14 +179,20 @@ class Room:
             num_chests = random.randint(1, 3)
             for _ in range(num_chests):
                 pos = self._get_random_position_in_room()
-                self.chests.append(Chest(pos, random.choice(weapon_pool())))
+            self.chests.append(Chest(pos, self._roll_loot_item()))
         
         # Normal rooms can have chests too
         if self.room_type == "normal" and random.random() < 0.4:
             pos = self._get_random_position_in_room()
-            self.chests.append(Chest(pos, random.choice(weapon_pool())))
+            self.chests.append(Chest(pos, self._roll_loot_item()))
         
         self.generated = True
+
+    def _roll_loot_item(self):
+        """Return a random chest reward (weapon or charm)."""
+        if random.random() < 0.7:
+            return random.choice(weapon_pool())
+        return get_random_charm()
 
     def _get_random_position_in_room(self):
         """Get a random position within the room, avoiding walls and center"""
@@ -248,6 +256,11 @@ class Room:
         # Update chests
         for chest in self.chests:
             chest.update(player, dt, keys)
+
+        # Update dropped ground pickups (e.g. swapped-out weapons)
+        for pickup in self.ground_pickups:
+            if pickup and pickup.active:
+                pickup.update(dt)
         
         # Check if all enemies are dead to clear room and open doors
         if not self.cleared and len(self.enemies) == 0:

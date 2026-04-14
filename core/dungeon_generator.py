@@ -34,7 +34,12 @@ class DungeonGenerator:
         
         # Connect rooms (set connections based on grid adjacency)
         self._set_room_connections()
-        
+
+        # Always give the boss room a downward exit so the player can advance to the next floor
+        boss_room = self.get_boss_room()
+        if boss_room and (1, 0) not in boss_room.connections:
+            boss_room.connections.append((1, 0))
+
         # Generate room contents AFTER connections are set
         for i, room in enumerate(self.rooms):
             room.generate_contents(self.level)
@@ -49,56 +54,66 @@ class DungeonGenerator:
         return self.rooms
     
     def _generate_path_to_boss(self, start_x, start_y, num_rooms):
-        """Generate a path from start to boss room"""
+        """Generate a meandering path from start toward a boss room"""
         current_x, current_y = start_x, start_y
-        path_length = random.randint(4, 6)
-        
-        for i in range(path_length):
-            # Move downward (toward boss)
-            current_y += 1
-            if current_y >= GRID_SIZE:
-                current_y = GRID_SIZE - 1
+        path_length = random.randint(5, 8)
+        path_rooms = []
+
+        for _ in range(path_length):
+            # Build weighted list of valid adjacent moves (col_off, row_off)
+            moves = []
+            # Strongly prefer going down (row + 1)
+            if current_y + 1 < GRID_SIZE - 1 and self.room_grid[current_y + 1][current_x] is None:
+                moves += [(0, 1)] * 4  # 4× weight for downward
+            # Occasionally drift left or right
+            if current_x - 1 >= 1 and self.room_grid[current_y][current_x - 1] is None:
+                moves.append((-1, 0))
+            if current_x + 1 < GRID_SIZE - 1 and self.room_grid[current_y][current_x + 1] is None:
+                moves.append((1, 0))
+
+            if not moves:
                 break
-            
-            # Create room
-            if i == path_length - 1:
-                room_type = "boss"
-            elif i == 0:
-                room_type = "normal"
-            else:
-                room_type = random.choice(["normal", "enemy", "treasure"])
-            
+
+            col_off, row_off = random.choice(moves)
+            current_x += col_off
+            current_y += row_off
+
+            room_type = random.choice(["normal", "normal", "enemy", "treasure"])
             room = Room(len(self.rooms), current_x, current_y, room_type)
             self.rooms.append(room)
             self.room_grid[current_y][current_x] = room
-            
-            # Don't set connections here - will be done in _set_room_connections
+            path_rooms.append(room)
+
+        # The last room on the path is always the boss
+        if path_rooms:
+            path_rooms[-1].room_type = "boss"
     
     def _add_extra_rooms(self, num_extra):
         """Add extra rooms branching from existing ones"""
+        target_count = len(self.rooms) + num_extra
         attempts = 0
         max_attempts = num_extra * 10
-        
-        while len(self.rooms) < (len(self.rooms) + num_extra) and attempts < max_attempts:
+
+        while len(self.rooms) < target_count and attempts < max_attempts:
             attempts += 1
             
             # Find existing rooms that have space around them
             possible_parents = []
             for room in self.rooms:
                 x, y = room.grid_x, room.grid_y
-                # Check all directions
-                for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
-                    nx, ny = x + dx, y + dy
+                # Check all directions: (row_offset, col_offset)
+                for row_off, col_off in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                    nx, ny = x + col_off, y + row_off
                     # Check if position is within bounds AND empty
                     if (0 <= nx < GRID_SIZE and 0 <= ny < GRID_SIZE and 
                         self.room_grid[ny][nx] is None):
-                        possible_parents.append((room, dx, dy, nx, ny))
+                        possible_parents.append((room, row_off, col_off, nx, ny))
             
             if not possible_parents:
                 break
             
             # Pick random parent and direction
-            parent, dx, dy, nx, ny = random.choice(possible_parents)
+            parent, row_off, col_off, nx, ny = random.choice(possible_parents)
             
             # Determine room type (no boss in branches)
             room_types = ["normal"] * 60 + ["enemy"] * 25 + ["treasure"] * 15
@@ -115,9 +130,10 @@ class DungeonGenerator:
             x, y = room.grid_x, room.grid_y
             
             # Check all 4 directions for adjacent rooms
+            # Directions are (row_offset, col_offset): (-1,0)=up, (1,0)=down, (0,-1)=left, (0,1)=right
             directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
-            for dx, dy in directions:
-                nx, ny = x + dx, y + dy
+            for row_off, col_off in directions:
+                nx, ny = x + col_off, y + row_off
                 
                 # Check if neighbor is within bounds
                 if 0 <= nx < GRID_SIZE and 0 <= ny < GRID_SIZE:
@@ -126,11 +142,11 @@ class DungeonGenerator:
                     # If there's a room in this direction, add connection
                     if neighbor is not None:
                         # Add connection to current room
-                        if (dx, dy) not in room.connections:
-                            room.connections.append((dx, dy))
+                        if (row_off, col_off) not in room.connections:
+                            room.connections.append((row_off, col_off))
                         
                         # Add reverse connection to neighbor
-                        reverse_dir = (-dx, -dy)
+                        reverse_dir = (-row_off, -col_off)
                         if reverse_dir not in neighbor.connections:
                             neighbor.connections.append(reverse_dir)
     

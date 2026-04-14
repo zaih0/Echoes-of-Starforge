@@ -2,7 +2,7 @@
 import pygame
 import json
 import os
-from core.settings import WIDTH, HEIGHT, FPS, GRID_SIZE
+from core.settings import WIDTH, HEIGHT, FPS, GRID_SIZE, PLAYER_RADIUS
 from core.menu import MainMenu
 from core.hub import Hub
 from core.dungeon_generator import DungeonGenerator
@@ -10,7 +10,8 @@ from core.levelup import LevelUpSystem
 from core.camera import Camera
 from entities.player import Player
 from entities.weapon import starter_weapon, weapon_pool
-from entities.charm import get_random_charm
+from entities.charm import get_random_charm, charm_pool
+from entities.chest import FloatingPickup
 from entities.bullet import Bullet
 from entities.melee import SwordArc
 
@@ -40,6 +41,11 @@ class GameManager:
         self.kill_count = 0
         self.time_elapsed = 0
         self.game_paused = False
+
+        # Floor transition banner state
+        self.level_banner_timer = 0.0
+        self.level_banner_text = ""
+        self.level_banner_subtext = ""
         
         # Font for UI
         from core.font_manager import font_manager
@@ -60,16 +66,88 @@ class GameManager:
             self.save_data = {}
     
     def save_game(self):
-        """Save game data"""
+        """Save hub data and, if a run is active, the full run state."""
+        data = {}
+
+        # --- Hub / skill-tree ---
         if self.hub:
-            self.hub.skill_tree.save()
+            st = self.hub.skill_tree
+            data["shards"] = st.shards
+            data["total_shards"] = st.total_shards_earned
+            data["skills"] = {
+                name: skill["level"] for name, skill in st.skills.items()
+            }
+
+        # --- Active run (only when player is alive) ---
+        if self.player and self.player.hp > 0 and self.current_room:
+            data["run"] = {
+                "current_level": self.current_level,
+                "kill_count": self.kill_count,
+                "time_elapsed": self.time_elapsed,
+                "player": {
+                    "hp": self.player.hp,
+                    "max_hp": self.player.max_hp,
+                    "speed": self.player.speed,
+                    "damage_multiplier": self.player.damage_multiplier,
+                    "fire_rate_multiplier": self.player.fire_rate_multiplier,
+                    "crit_chance": self.player.crit_chance,
+                    "life_steal": self.player.life_steal,
+                    "health_regen": self.player.health_regen,
+                    "damage_reduction": self.player.damage_reduction,
+                    "multi_shot": self.player.multi_shot,
+                    "bullet_speed_multiplier": self.player.bullet_speed_multiplier,
+                    "bullet_pierce": self.player.bullet_pierce,
+                    "player_level": self.player.player_level,
+                    "weapon": self.player.weapon.name if self.player.weapon else None,
+                    "charms": [
+                        {"name": c.name, "stacks": getattr(c, "stacks", 1)}
+                        for c in self.player.charms
+                    ],
+                },
+                "level_system": {
+                    "xp": self.level_system.xp if self.level_system else 0,
+                    "xp_to_next_level": self.level_system.xp_to_next_level if self.level_system else 100,
+                    "player_level": self.level_system.player_level if self.level_system else 1,
+                },
+            }
+
+        with open("save_data.json", "w") as f:
+            json.dump(data, f, indent=2)
+
+        self.save_data = data
+        if self.menu:
+            self.menu.save_exists = "run" in data
+
+    def _clear_run_save(self):
+        """Remove saved run state (call on new game or after death)."""
+        self.save_data.pop("run", None)
+        if os.path.exists("save_data.json"):
+            try:
+                with open("save_data.json", "r") as f:
+                    data = json.load(f)
+                data.pop("run", None)
+                with open("save_data.json", "w") as f:
+                    json.dump(data, f, indent=2)
+            except Exception:
+                pass
+        if self.menu:
+            self.menu.save_exists = False
     
     def start_new_game(self):
         """Start a new game session"""
         print("=" * 50)
         print("STARTING NEW GAME")
         print("=" * 50)
-    
+
+        # Wipe any previous run save so Continue is disabled
+        self._clear_run_save()
+
+        # Reset per-run state
+        self.current_level = 1
+        self.level_banner_timer = 0.0
+        self.level_banner_text = ""
+        self.level_banner_subtext = ""
+
         # Get skill bonuses from hub
         skill_bonuses = self.hub.skill_tree.get_bonuses() if self.hub else {}
         print(f"Skill bonuses: {skill_bonuses}")
@@ -113,19 +191,100 @@ class GameManager:
             print("=" * 50)
     
     def continue_game(self):
-        """Continue from save"""
-        self.start_new_game()
+        """Restore a saved in-progress run."""
+        self.load_game()
+        run_data = self.save_data.get("run")
+        if not run_data:
+            # No run saved — fall back to a fresh game
+            self.start_new_game()
+            return
+
+        print("=" * 50)
+        print("CONTINUING SAVED RUN")
+        print("=" * 50)
+
+        self.current_level = run_data.get("current_level", 1)
+        self.kill_count    = run_data.get("kill_count", 0)
+        self.time_elapsed  = run_data.get("time_elapsed", 0.0)
+        self.level_banner_timer   = 0.0
+        self.level_banner_text    = ""
+        self.level_banner_subtext = ""
+
+        # Regenerate the dungeon for this floor level
+        self.dungeon = DungeonGenerator(self.current_level)
+        self.rooms = self.dungeon.generate(self.current_level)
+        self.current_room = self.dungeon.get_start_room()
+        self.room_number  = self.current_room.index
+
+        # Build player with hub bonuses, then overwrite with saved stats
+        skill_bonuses = self.hub.skill_tree.get_bonuses() if self.hub else {}
+        spawn_pos = self.current_room.get_player_spawn_position()
+        self.player = Player(spawn_pos.x, spawn_pos.y, skill_bonuses)
+
+        pdata = run_data.get("player", {})
+        self.player.hp                   = pdata.get("hp", self.player.hp)
+        self.player.max_hp               = pdata.get("max_hp", self.player.max_hp)
+        self.player.speed                = pdata.get("speed", self.player.speed)
+        self.player.damage_multiplier    = pdata.get("damage_multiplier", self.player.damage_multiplier)
+        self.player.fire_rate_multiplier = pdata.get("fire_rate_multiplier", self.player.fire_rate_multiplier)
+        self.player.crit_chance          = pdata.get("crit_chance", self.player.crit_chance)
+        self.player.life_steal           = pdata.get("life_steal", self.player.life_steal)
+        self.player.health_regen         = pdata.get("health_regen", self.player.health_regen)
+        self.player.damage_reduction     = pdata.get("damage_reduction", self.player.damage_reduction)
+        self.player.multi_shot           = pdata.get("multi_shot", self.player.multi_shot)
+        self.player.bullet_speed_multiplier = pdata.get("bullet_speed_multiplier", self.player.bullet_speed_multiplier)
+        self.player.bullet_pierce        = pdata.get("bullet_pierce", self.player.bullet_pierce)
+        self.player.player_level         = pdata.get("player_level", 1)
+
+        # Restore weapon by name
+        weapon_name = pdata.get("weapon")
+        if weapon_name:
+            all_weapons = [starter_weapon()] + weapon_pool()
+            matched = next((w for w in all_weapons if w.name == weapon_name), None)
+            self.player.weapon = matched if matched else starter_weapon()
+        else:
+            self.player.weapon = starter_weapon()
+
+        # Restore charms — apply each stack individually to rebuild all stat effects
+        for charm_data in pdata.get("charms", []):
+            stacks = charm_data.get("stacks", 1)
+            for _ in range(stacks):
+                pool = charm_pool()
+                match = next((c for c in pool if c.name == charm_data["name"]), None)
+                if match:
+                    self.player.add_charm(match)
+
+        # Restore level-up system
+        self.level_system = LevelUpSystem()
+        lsdata = run_data.get("level_system", {})
+        self.level_system.xp              = lsdata.get("xp", 0)
+        self.level_system.xp_to_next_level = lsdata.get("xp_to_next_level", 100)
+        self.level_system.player_level    = lsdata.get("player_level", 1)
+        self.player.player_level          = self.level_system.player_level
+
+        self.bullets = []
+        self.state   = "game"
+        print(f"Loaded: Floor {self.current_level}, HP {self.player.hp}/{self.player.max_hp}, Weapon: {self.player.weapon.name}")
+        print(f"Charms: {[c.name for c in self.player.charms]}")
+        print("=" * 50)
     
     def return_to_hub(self):
-        """Return to hub with earned shards"""
-        if self.player and self.player.hp <= 0:
-            # Player died, check if they earned shards
-            shards_earned = self.kill_count // 10
-            if shards_earned > 0:
-                self.hub.skill_tree.shards += shards_earned
-                self.hub.skill_tree.total_shards_earned += shards_earned
-                self.save_game()
-        
+        """Return to hub: award shards, save or clear run depending on outcome."""
+        shards_earned = self.kill_count // 10 if self.kill_count else 0
+        player_alive = self.player and self.player.hp > 0
+
+        if shards_earned > 0 and self.hub:
+            self.hub.skill_tree.shards += shards_earned
+            self.hub.skill_tree.total_shards_earned += shards_earned
+
+        if player_alive:
+            # Mid-run retreat — preserve the run so the player can Continue
+            self.save_game()
+        else:
+            # Death — erase the run save and persist hub data only
+            self._clear_run_save()
+            self.save_game()
+
         self.state = "hub"
         self.player = None
         self.dungeon = None
@@ -137,6 +296,7 @@ class GameManager:
         
         for event in events:
             if event.type == pygame.QUIT:
+                self.save_game()
                 self.running = False
                 return
             
@@ -152,12 +312,15 @@ class GameManager:
                     elif self.state == "hub":
                         # From hub, go to main menu
                         self.state = "menu"
+                        return
                     elif self.state == "dead":
                         # From death screen, go to main menu
                         self.state = "menu"
+                        return
                 
                 # Add M key to go to main menu from pause screen
                 if event.key == pygame.K_m and self.state == "game" and self.game_paused:
+                    self.save_game()   # preserve the run
                     self.state = "menu"
                     self.game_paused = False
                     self.player = None
@@ -199,7 +362,7 @@ class GameManager:
             if result == "menu":
                 self.state = "menu"
         
-        elif self.state == "game" and not self.game_paused:
+        elif self.state == "game" and not self.game_paused and not (self.level_system and self.level_system.showing_upgrades):
             self._update_game(dt, events)
             
             # Check if player died
@@ -212,7 +375,11 @@ class GameManager:
     def _update_game(self, dt, events):
         """Update game gameplay"""
         self.time_elapsed += dt
-        
+
+        # Update floor banner countdown
+        if self.level_banner_timer > 0:
+            self.level_banner_timer -= dt
+
         # Get mouse state
         mouse_pos = pygame.mouse.get_pos()
         mouse_pressed = pygame.mouse.get_pressed()
@@ -277,17 +444,35 @@ class GameManager:
                     direction = result[1]
                     self._move_to_adjacent_room(direction)
         
-        # Handle chest pickups separately
+        # Handle chest + dropped ground pickups separately
         if self.current_room and self.player:
+            collectible_pickups = []
+
+            # Chest-contained pickups
             for chest in self.current_room.chests:
                 if chest.pickup and chest.pickup.active and not chest.pickup.collected:
-                    # Check if player is close to collect
-                    distance = (self.player.pos - chest.pickup.pos).length()
-                    if distance < 50 and chest.pickup.can_be_collected():
-                        if chest.pickup.collect():
-                            # Apply item to player
-                            self._apply_item_to_player(chest.pickup.item)
-                            print(f"Collected: {chest.pickup.item.name}")
+                    collectible_pickups.append((chest.pickup, "chest"))
+
+            # Room dropped pickups (e.g. old weapon after swap)
+            for pickup in self.current_room.ground_pickups[:]:
+                if pickup and pickup.active and not pickup.collected:
+                    collectible_pickups.append((pickup, "ground"))
+
+            for pickup, source in collectible_pickups:
+                distance = (self.player.pos - pickup.pos).length()
+                if distance < 50 and pickup.can_be_collected():
+                    if pickup.collect():
+                        dropped_item = self._apply_item_to_player(pickup.item)
+                        print(f"Collected: {pickup.item.name}")
+
+                        # If weapon swapped, drop old weapon where player stands so they can swap back
+                        if dropped_item and hasattr(dropped_item, "type") and dropped_item.type == "weapon":
+                            dropped_pickup = FloatingPickup(self.player.pos.copy(), dropped_item)
+                            self.current_room.ground_pickups.append(dropped_pickup)
+
+                        # Clean up consumed ground pickup entries
+                        if source == "ground" and pickup in self.current_room.ground_pickups:
+                            self.current_room.ground_pickups.remove(pickup)
         
         # Keep player in bounds
         if self.current_room and self.player:
@@ -301,6 +486,11 @@ class GameManager:
         # Calculate new grid position
         new_grid_x = self.current_room.grid_x + direction[1]
         new_grid_y = self.current_room.grid_y + direction[0]
+
+        # Boss stair rule: moving through the bottom boss door always advances floor
+        if self.current_room.room_type == "boss" and self.current_room.cleared and direction == (1, 0):
+            self._generate_next_level(direction)
+            return
         
         # Debug output only when debug mode is on
         if self.debug:
@@ -310,9 +500,11 @@ class GameManager:
         
         # Check if new position is within grid bounds
         if new_grid_x < 0 or new_grid_x >= GRID_SIZE or new_grid_y < 0 or new_grid_y >= GRID_SIZE:
-            if self.debug:
-                print(f"Cannot move: Position ({new_grid_x}, {new_grid_y}) is out of bounds")
-            return  # Don't move, don't reset player position
+            if self.current_room.room_type == "boss" and self.current_room.cleared:
+                self._generate_next_level(direction)
+            elif self.debug:
+                print(f"Cannot move: out of bounds ({new_grid_x}, {new_grid_y})")
+            return
         
         # Get the adjacent room
         adjacent_room = self.dungeon.get_room_at(new_grid_x, new_grid_y)
@@ -338,9 +530,10 @@ class GameManager:
             if self.debug:
                 print(f"Player positioned at: {self.player.pos}")
         else:
-            if self.debug:
+            if self.current_room.room_type == "boss" and self.current_room.cleared:
+                self._generate_next_level(direction)
+            elif self.debug:
                 print(f"No room at grid position ({new_grid_x}, {new_grid_y})")
-            # Don't move or reset position
     
     def _position_player_at_door(self, from_direction):
         """Position player near the door they entered from"""
@@ -382,19 +575,72 @@ class GameManager:
                 print(f"WARNING: No door found for direction {from_direction}, positioning at center")
             self.player.pos = pygame.Vector2(WIDTH // 2, HEIGHT // 2)
     
+    def _generate_next_level(self, direction):
+        """Generate the next dungeon floor after the boss is defeated"""
+        defeated_floor = self.current_level
+        self.current_level += 1
+        print(f"[FLOOR ADVANCE] Entering Floor {self.current_level}")
+
+        self.dungeon = DungeonGenerator(self.current_level)
+        self.rooms = self.dungeon.generate(self.current_level)
+
+        self.current_room = self.dungeon.get_start_room()
+
+        # Do not send player back to tutorial start: convert start room into an empty treasure room
+        self.current_room.room_type = "treasure"
+        self.current_room.enemies.clear()
+        self.current_room.chests.clear()
+        self.current_room.xp_pickups.clear()
+        self.current_room.shard_pickups.clear()
+        self.current_room.ground_pickups.clear()
+        self.current_room.melees.clear()
+        self.current_room.cleared = True
+        for direction_key in self.current_room.door_open.keys():
+            self.current_room.door_open[direction_key] = True
+
+        self.current_room.visited = True
+        self.room_number = self.current_room.index
+
+        self.player.pos = self.current_room.get_player_spawn_position()
+        self.bullets.clear()
+
+        self.level_banner_timer = 3.0
+        self.level_banner_text = f"FLOOR  {self.current_level}"
+        self.level_banner_subtext = self._get_boss_defeat_line(defeated_floor)
+
+        # Auto-save on each new floor so Continue works after a boss kill
+        self.save_game()
+
+    def _get_boss_defeat_line(self, defeated_floor):
+        """Return short story text after a boss defeat."""
+        lines = [
+            "A forge-warden falls. The path cracks open.",
+            "Another shard-song fades into silence.",
+            "The vault remembers your name now.",
+            "Star-iron cools. The next chamber wakes.",
+            "You break the echo, not the will behind it.",
+            "The anvil hums deeper below.",
+            "A sealed gate yields to your fire.",
+            "The dark between stars leans closer."
+        ]
+        return f"Floor {defeated_floor} Cleared — {lines[(defeated_floor - 1) % len(lines)]}"
+
     def _apply_item_to_player(self, item):
         """Apply collected item to player"""
         if not self.player:
-            return
+            return None
         
         # Check item type and apply accordingly
         if hasattr(item, 'type'):
             if item.type == "weapon":
+                old_weapon = self.player.weapon
                 self.player.weapon = item
                 print(f"Equipped new weapon: {item.name}")
+                return old_weapon
             elif item.type == "charm":
                 # Add charm to player
                 self.player.add_charm(item)
+        return None
     
     def _update_death_screen(self, events):
         """Update death screen"""
@@ -403,6 +649,7 @@ class GameManager:
                 if event.key == pygame.K_RETURN:
                     self.return_to_hub()
                 elif event.key == pygame.K_ESCAPE:
+                    self._clear_run_save()
                     self.state = "menu"
     
     def draw(self):
@@ -417,20 +664,26 @@ class GameManager:
         
         elif self.state == "game":
             self._draw_game()
-            
-            if self.game_paused:
-                self._draw_pause_menu()
-            
+
+            # Draw UI elements (health, XP, equipment, room info) above the game world
+            self._draw_game_ui()
+
+            # Floor transition banner
+            if self.level_banner_timer > 0:
+                self._draw_level_banner()
+
+            # Draw start room tutorial (suppressed while paused so it doesn't bleed through)
+            if self.current_room and self.current_room.room_type == "start" and not self.game_paused:
+                self._draw_start_room_tutorial()
+
+            # Level-up card selection (drawn above game, below pause)
             if self.level_system and self.level_system.showing_upgrades:
                 self.level_system.draw(self.screen)
-            
-            # Draw UI elements
-            self._draw_game_ui()
-            
-            # Draw start room tutorial text on the ground
-            if self.current_room and self.current_room.room_type == "start":
-                self._draw_start_room_tutorial()
-            
+
+            # Pause menu is ALWAYS drawn last so its dark overlay covers everything cleanly
+            if self.game_paused:
+                self._draw_pause_menu()
+
             # Debug info (only if debug mode is on)
             if self.debug:
                 self._draw_debug_info()
@@ -471,6 +724,12 @@ class GameManager:
         # Draw shard pickups
         for shard in self.current_room.shard_pickups:
             shard.draw(self.screen, self.camera)
+
+        # Draw dropped ground pickups (e.g. swapped weapons)
+        for pickup in self.current_room.ground_pickups:
+            if pickup and pickup.active:
+                screen_pos = self.camera.apply_pos(pickup.pos)
+                pickup.draw_at_position(self.screen, (screen_pos.x, screen_pos.y))
     
         # Draw player
         if self.player:
@@ -586,7 +845,12 @@ class GameManager:
         if self.player and self.player.charms:
             for i, charm in enumerate(self.player.charms[:5]):
                 charm_y = charms_y + 30 + (i * 25)
-                charm_text = self.font_manager.render(f"• {charm.name}: {charm.description}", "small", (220, 200, 255))
+                stack_count = getattr(charm, "stacks", 1)
+                stack_suffix = f" x{stack_count}" if stack_count > 1 else ""
+                charm_text = self.font_manager.render(
+                    f"• {charm.name}{stack_suffix}: {charm.description}",
+                    "small", (220, 200, 255)
+                )
                 self.screen.blit(charm_text, (panel_x + 40, charm_y))
         
         # Show charm count if more than 5
@@ -597,23 +861,30 @@ class GameManager:
     def _draw_room_info(self):
         """Draw room information at bottom-left"""
         info_x = 30
-        info_y = HEIGHT - 150
-        
+        info_y = HEIGHT - 185
+
         # Background
-        pygame.draw.rect(self.screen, (40, 40, 60, 180), (info_x, info_y, 300, 120), border_radius=5)
-        pygame.draw.rect(self.screen, (60, 80, 100), (info_x, info_y, 300, 120), 2, border_radius=5)
-        
-        # Room info
+        pygame.draw.rect(self.screen, (40, 40, 60, 180), (info_x, info_y, 320, 155), border_radius=5)
+        pygame.draw.rect(self.screen, (60, 80, 100), (info_x, info_y, 320, 155), 2, border_radius=5)
+
+        # Floor number
+        floor_text = self.font_manager.render(f"FLOOR {self.current_level}", "small", (255, 215, 0))
+        self.screen.blit(floor_text, (info_x + 20, info_y + 12))
+
+        # Room type
         room_type = self.current_room.room_type.upper()
         room_text = self.font_manager.render(f"ROOM: {room_type}", "normal", (200, 255, 200))
-        self.screen.blit(room_text, (info_x + 20, info_y + 15))
-        
+        self.screen.blit(room_text, (info_x + 20, info_y + 42))
+
+        # Enemy count
         enemies_text = self.font_manager.render(f"Enemies: {len(self.current_room.enemies)}", "small", (255, 150, 150))
-        self.screen.blit(enemies_text, (info_x + 20, info_y + 55))
-        
-        cleared_text = self.font_manager.render(f"Cleared: {'YES' if self.current_room.cleared else 'NO'}", 
-                                              "small", (150, 255, 150) if self.current_room.cleared else (255, 150, 150))
-        self.screen.blit(cleared_text, (info_x + 20, info_y + 85))
+        self.screen.blit(enemies_text, (info_x + 20, info_y + 88))
+
+        # Cleared status
+        cleared_text = self.font_manager.render(
+            f"Cleared: {'YES' if self.current_room.cleared else 'NO'}",
+            "small", (150, 255, 150) if self.current_room.cleared else (255, 150, 150))
+        self.screen.blit(cleared_text, (info_x + 20, info_y + 118))
     
     def _draw_start_room_tutorial(self):
         """Draw tutorial text on the ground in start room"""
@@ -690,21 +961,91 @@ class GameManager:
             self.screen.blit(debug_text, (10, 10 + i * 25))
     
     def _draw_pause_menu(self):
-        """Draw pause menu overlay"""
+        """Draw pause menu overlay — always drawn last so nothing bleeds through."""
+        # Full-screen dark scrim
         overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-        overlay.fill((0, 0, 0, 180))
+        overlay.fill((0, 0, 0, 210))
         self.screen.blit(overlay, (0, 0))
-        
-        pause_text = self.font_manager.render("PAUSED", "large", (255, 255, 255))
-        self.screen.blit(pause_text, (WIDTH//2 - pause_text.get_width()//2, HEIGHT//2 - 100))
-        
-        resume_text = self.font_manager.render("Press ESC to resume", "normal", (200, 200, 200))
-        self.screen.blit(resume_text, (WIDTH//2 - resume_text.get_width()//2, HEIGHT//2 + 50))
-        
-        # Add menu option in pause screen
-        menu_text = self.font_manager.render("Press M to return to Main Menu", "normal", (200, 200, 100))
-        self.screen.blit(menu_text, (WIDTH//2 - menu_text.get_width()//2, HEIGHT//2 + 100))
+
+        # --- Centered panel ---
+        panel_w, panel_h = 640, 320
+        panel_x = WIDTH  // 2 - panel_w // 2
+        panel_y = HEIGHT // 2 - panel_h // 2
+
+        panel = pygame.Surface((panel_w, panel_h), pygame.SRCALPHA)
+        panel.fill((15, 20, 35, 240))
+        self.screen.blit(panel, (panel_x, panel_y))
+
+        # Gold border
+        pygame.draw.rect(self.screen, (255, 215, 0), (panel_x, panel_y, panel_w, panel_h), 3, border_radius=12)
+        # Inner subtle border
+        pygame.draw.rect(self.screen, (80, 100, 140), (panel_x + 6, panel_y + 6, panel_w - 12, panel_h - 12), 1, border_radius=10)
+
+        cx = WIDTH // 2
+
+        # Title
+        pause_surf = self.font_manager.render("PAUSED", "large", (255, 215, 0))
+        self.screen.blit(pause_surf, pause_surf.get_rect(centerx=cx, top=panel_y + 28))
+
+        # Divider line
+        div_y = panel_y + 28 + pause_surf.get_height() + 18
+        pygame.draw.line(self.screen, (80, 100, 140), (panel_x + 30, div_y), (panel_x + panel_w - 30, div_y), 1)
+
+        # Keybind rows
+        hints = [
+            ("ESC", "Resume game"),
+            ("M",   "Return to Main Menu"),
+            ("H",   "Retreat to Hub  (shards kept)"),
+        ]
+        row_y = div_y + 20
+        for key, desc in hints:
+            key_surf  = self.font_manager.render(f"[{key}]", "normal", (255, 215, 0))
+            desc_surf = self.font_manager.render(desc,        "normal", (220, 230, 255))
+            key_x  = panel_x + 50
+            desc_x = panel_x + 50 + key_surf.get_width() + 24
+            self.screen.blit(key_surf,  (key_x,  row_y))
+            self.screen.blit(desc_surf, (desc_x, row_y))
+            row_y += key_surf.get_height() + 14
+
+        # Floor / kill info footer
+        footer_text = self.font_manager.render(
+            f"Floor {self.current_level}   |   Kills: {self.kill_count}",
+            "small", (140, 160, 200)
+        )
+        self.screen.blit(footer_text, footer_text.get_rect(centerx=cx, bottom=panel_y + panel_h - 18))
     
+    def _draw_level_banner(self):
+        """Draw the animated floor transition banner"""
+        t = self.level_banner_timer
+        if t < 0.5:
+            alpha = int(t / 0.5 * 255)
+        elif t > 2.7:
+            alpha = int((3.0 - t) / 0.3 * 255)
+        else:
+            alpha = 255
+        alpha = max(0, min(255, alpha))
+
+        banner_surf = self.font_manager.render(self.level_banner_text, "large", (255, 215, 0))
+        subtext = self.level_banner_subtext or "A new challenge awaits..."
+        sub_surf = self.font_manager.render(subtext, "normal", (200, 220, 255))
+
+        pad = 50
+        panel_w = max(banner_surf.get_width(), sub_surf.get_width()) + pad * 2
+        panel_h = banner_surf.get_height() + sub_surf.get_height() + pad + 20
+        panel = pygame.Surface((panel_w, panel_h), pygame.SRCALPHA)
+        panel.fill((10, 15, 30, min(210, alpha)))
+        pygame.draw.rect(panel, (255, 215, 0, min(200, alpha)), panel.get_rect(), 3, border_radius=14)
+        panel_rect = panel.get_rect(center=(WIDTH // 2, HEIGHT // 2))
+        self.screen.blit(panel, panel_rect)
+
+        banner_surf.set_alpha(alpha)
+        sub_surf.set_alpha(alpha)
+        self.screen.blit(banner_surf,
+                         banner_surf.get_rect(centerx=WIDTH // 2, top=panel_rect.top + 24))
+        self.screen.blit(sub_surf,
+                         sub_surf.get_rect(centerx=WIDTH // 2,
+                                           top=panel_rect.top + banner_surf.get_height() + 36))
+
     def _draw_death_screen(self):
         """Draw death screen"""
         overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)

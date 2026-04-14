@@ -1,4 +1,6 @@
 # entities/charm.py
+import random
+
 class Charm:
     def __init__(self, name, effect, description=""):
         self.name = name

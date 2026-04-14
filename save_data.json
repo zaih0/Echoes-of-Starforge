@@ -1,1 +1,14 @@
-{"shards": 0, "total_shards": 0, "skills": {"health": 0, "damage": 0, "speed": 0, "reload": 0, "luck": 0, "crit": 0, "armor": 0, "regen": 0}}
+{
+  "shards": 1,
+  "total_shards": 24,
+  "skills": {
+    "health": 4,
+    "damage": 4,
+    "speed": 0,
+    "reload": 0,
+    "luck": 0,
+    "crit": 1,
+    "armor": 0,
+    "regen": 0
+  }
+}
