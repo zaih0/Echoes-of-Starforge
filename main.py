@@ -12,15 +12,17 @@ def main():
     from core.font_manager import font_manager
     font_manager.initialize()
     
-    # Get monitor dimensions for fullscreen
-    info = pygame.display.Info()
-    screen_width, screen_height = info.current_w, info.current_h
-    
-    # Create screen with proper flags
-    screen = pygame.display.set_mode(
-        (screen_width, screen_height),
-        pygame.FULLSCREEN | pygame.HWSURFACE | pygame.DOUBLEBUF
-    )
+    # Browser builds (emscripten) should not use fullscreen/HWSURFACE flags.
+    if sys.platform == "emscripten":
+        screen = pygame.display.set_mode((WIDTH, HEIGHT))
+    else:
+        # Desktop: use current monitor size fullscreen.
+        info = pygame.display.Info()
+        screen_width, screen_height = info.current_w, info.current_h
+        screen = pygame.display.set_mode(
+            (screen_width, screen_height),
+            pygame.FULLSCREEN | pygame.HWSURFACE | pygame.DOUBLEBUF
+        )
     pygame.display.set_caption("Echoes of Starforge")
     
     # Initialize game

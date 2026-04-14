@@ -1,13 +1,12 @@
 # core/game_manager.py - COMPLETE UPDATED VERSION
 import pygame
-import json
-import os
 from core.settings import WIDTH, HEIGHT, FPS, GRID_SIZE, PLAYER_RADIUS
 from core.menu import MainMenu
 from core.hub import Hub
 from core.dungeon_generator import DungeonGenerator
 from core.levelup import LevelUpSystem
 from core.camera import Camera
+from core.save_manager import load_save_data, write_save_data
 from entities.player import Player
 from entities.weapon import starter_weapon, weapon_pool
 from entities.charm import get_random_charm, charm_pool
@@ -59,11 +58,7 @@ class GameManager:
     
     def load_game(self):
         """Load saved game data"""
-        if os.path.exists("save_data.json"):
-            with open("save_data.json", "r") as f:
-                self.save_data = json.load(f)
-        else:
-            self.save_data = {}
+        self.save_data = load_save_data()
     
     def save_game(self):
         """Save hub data and, if a run is active, the full run state."""
@@ -111,8 +106,7 @@ class GameManager:
                 },
             }
 
-        with open("save_data.json", "w") as f:
-            json.dump(data, f, indent=2)
+        write_save_data(data)
 
         self.save_data = data
         if self.menu:
@@ -120,16 +114,10 @@ class GameManager:
 
     def _clear_run_save(self):
         """Remove saved run state (call on new game or after death)."""
-        self.save_data.pop("run", None)
-        if os.path.exists("save_data.json"):
-            try:
-                with open("save_data.json", "r") as f:
-                    data = json.load(f)
-                data.pop("run", None)
-                with open("save_data.json", "w") as f:
-                    json.dump(data, f, indent=2)
-            except Exception:
-                pass
+        data = load_save_data()
+        data.pop("run", None)
+        write_save_data(data)
+        self.save_data = data
         if self.menu:
             self.menu.save_exists = False
     

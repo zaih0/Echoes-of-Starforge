@@ -1,24 +1,16 @@
 # core/menu.py
 import pygame
-import json
-import os
 import random
 from core.settings import WIDTH, HEIGHT
 from core.font_manager import font_manager  
+from core.save_manager import has_run_save
 
 class MainMenu:
     def __init__(self):
         self.selected_option = 0
         self.options = ["New Game", "Continue", "Hub", "Quit"]
         # Continue is only enabled when there is an in-progress run saved
-        self.save_exists = False
-        if os.path.exists("save_data.json"):
-            try:
-                with open("save_data.json", "r") as _f:
-                    _d = json.load(_f)
-                self.save_exists = "run" in _d
-            except Exception:
-                pass
+        self.save_exists = has_run_save()
         
         # Fonts using pixel font
         self.title_font = font_manager.get_font("title")

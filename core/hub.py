@@ -1,11 +1,10 @@
 # core/hub.py - UPDATED WITH FONT MANAGER
 import pygame
-import json
-import os
 import random
 from typing import Dict, List
 from core.settings import WIDTH, HEIGHT
 from core.font_manager import font_manager  # ADD THIS
+from core.save_manager import load_save_data, write_save_data
 
 class SkillTree:
     def __init__(self):
@@ -49,19 +48,16 @@ class SkillTree:
             "total_shards": self.total_shards_earned,
             "skills": {name: skill["level"] for name, skill in self.skills.items()}
         }
-        with open("save_data.json", "w") as f:
-            json.dump(data, f)
+        write_save_data(data)
     
     def load(self):
-        if os.path.exists("save_data.json"):
-            with open("save_data.json", "r") as f:
-                data = json.load(f)
-                self.shards = data.get("shards", 0)
-                self.total_shards_earned = data.get("total_shards", 0)
-                skills_data = data.get("skills", {})
-                for name, level in skills_data.items():
-                    if name in self.skills:
-                        self.skills[name]["level"] = min(level, self.skills[name]["max_level"])
+        data = load_save_data()
+        self.shards = data.get("shards", 0)
+        self.total_shards_earned = data.get("total_shards", 0)
+        skills_data = data.get("skills", {})
+        for name, level in skills_data.items():
+            if name in self.skills:
+                self.skills[name]["level"] = min(level, self.skills[name]["max_level"])
 
 class Hub:
     def __init__(self):
